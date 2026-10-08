@@ -72,8 +72,17 @@ een live meeting die je met je telefoon op tafel hebt opgenomen.
 
 ## Variant B: transcriptie op de iPhone, audio verlaat het toestel niet
 
-Zelfde Shortcut, maar stap 8 en 9 worden anders. Werkt alleen als Apple's on-device model jouw
-opname in het Nederlands kan transcriberen; test dat eerst met één opname.
+Standaard is variant A (OpenAI, beste Nederlandse kwaliteit). Variant B is pas interessant als
+Apple's on-device model jouw opnames in het Nederlands goed aankan. Zo test je dat in twee minuten,
+los van de Worker:
+
+1. Nieuw Shortcut "Test transcriptie": **Ontvang Audio uit Deelmenu** → **Transcribeer audio** (Opdrachtinvoer) → **Snelle blik** (Quick Look) op het resultaat.
+2. Deel een echte gespreksopname uit Notities naar dit Shortcut.
+3. Beoordeel: Nederlands herkend? Namen en bedrijven redelijk? Geen afgekapte tekst bij een lange opname?
+
+Valt het mee, bouw dan variant B. Valt het tegen, dan blijft variant A de standaard.
+
+Zelfde Shortcut als variant A, maar stap 8 en 9 worden anders.
 
 8. **Transcribeer audio** (Transcribe Audio) → invoer: **Opdrachtinvoer**. Hernoem resultaat naar `Transcript`.
    (Lange opnames kunnen hier op een time-out lopen; dan is variant A de oplossing.)
