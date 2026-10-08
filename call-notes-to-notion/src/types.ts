@@ -41,6 +41,10 @@ export interface Job {
   contentType: string;
   filename: string;
   audioBytes: number;
+  /** Transcript zodra bekend. Audio wordt op dat moment direct gewist. */
+  transcript?: string;
+  /** Of het transcript al op de Notion-pagina staat (transcriptie geslaagd). */
+  transcriptSaved?: boolean;
   meta: IngestMeta;
 }
 
@@ -65,6 +69,8 @@ export interface CallSummary {
 }
 
 export const JOB_TTL_SECONDS = 60 * 60 * 48;
+/** Audio leeft hooguit zo lang in KV; normaal wordt hij al na enkele minuten (na transcriptie) gewist. */
+export const AUDIO_TTL_SECONDS = 60 * 60;
 export const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
 export const MAX_ATTEMPTS = 3;
 /** Na zoveel minuten "processing" zonder resultaat wordt een job opnieuw opgepakt. */

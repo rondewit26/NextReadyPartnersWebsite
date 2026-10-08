@@ -3,6 +3,7 @@ import type { Env } from "../src/types";
 /** Minimale in-memory KV die genoeg van de KVNamespace-API nadoet voor de tests. */
 export class MemoryKV {
   store = new Map<string, ArrayBuffer | string>();
+  ttl = new Map<string, number | undefined>();
 
   async get(key: string, type?: string): Promise<any> {
     const v = this.store.get(key);
@@ -10,8 +11,9 @@ export class MemoryKV {
     if (type === "arrayBuffer") return typeof v === "string" ? new TextEncoder().encode(v).buffer : v;
     return typeof v === "string" ? v : new TextDecoder().decode(v);
   }
-  async put(key: string, value: string | ArrayBuffer): Promise<void> {
+  async put(key: string, value: string | ArrayBuffer, opts?: { expirationTtl?: number }): Promise<void> {
     this.store.set(key, value);
+    this.ttl.set(key, opts?.expirationTtl);
   }
   async delete(key: string): Promise<void> {
     this.store.delete(key);

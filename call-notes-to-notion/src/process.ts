@@ -1,4 +1,12 @@
-import { NotionClient, block, finalProperties, summaryBlocks, transcriptBlocks, type FetchLike } from "./notion";
+import {
+  NotionClient,
+  block,
+  finalProperties,
+  summaryBlocks,
+  transcriptBlocks,
+  transcriptSectionBlocks,
+  type FetchLike,
+} from "./notion";
 import { summarize as defaultSummarize, type Summarizer } from "./summarize";
 import { formatNl, minutesBetween } from "./time";
 import { transcribe as defaultTranscribe } from "./transcribe";
@@ -59,6 +67,12 @@ export async function processPendingJobs(env: Env, deps: ProcessDeps = {}): Prom
   return result;
 }
 
+/**
+ * Twee stappen, elk apart herstartbaar:
+ *  1. transcriptie: audio uit KV -> transcript op de Notion-pagina -> audio direct wissen
+ *  2. samenvatting: transcript -> Claude -> properties + samenvattingsblokken
+ * Audio wordt nooit langer bewaard dan tot het einde van stap 1 (en hooguit AUDIO_TTL_SECONDS).
+ */
 export async function processJob(env: Env, job: Job, deps: ProcessDeps = {}): Promise<void> {
   const now = (deps.now ?? (() => new Date()))();
   const notion = new NotionClient(env.NOTION_TOKEN, deps.fetchImpl);
@@ -72,26 +86,41 @@ export async function processJob(env: Env, job: Job, deps: ProcessDeps = {}): Pr
   await saveJob(env, job);
 
   try {
-    const audio = await env.JOBS.get(`audio:${job.id}`, "arrayBuffer");
-    if (!audio) throw new Error("Audio niet (meer) gevonden in KV; upload de opname opnieuw.");
-
     const datumLabel = formatNl(new Date(job.meta.datum), env.TIMEZONE);
-    const transcript = await transcribe({
-      apiKey: env.OPENAI_API_KEY,
-      model: env.TRANSCRIBE_MODEL,
-      language: env.TRANSCRIBE_LANGUAGE,
-      audio,
-      filename: job.filename,
-      contentType: job.contentType,
-      prompt: `Nederlands telefoongesprek van Ron de Wit${job.meta.contact ? ` met ${job.meta.contact}` : ""}.`,
-      fetchImpl: deps.fetchImpl,
-    });
 
+    // Stap 1: transcriptie (overgeslagen als het transcript al bekend is).
+    if (!job.transcript) {
+      const audio = await env.JOBS.get(`audio:${job.id}`, "arrayBuffer");
+      if (!audio) throw new Error("Audio niet (meer) beschikbaar (al gewist of verlopen); upload de opname opnieuw.");
+      job.transcript = await transcribe({
+        apiKey: env.OPENAI_API_KEY,
+        model: env.TRANSCRIBE_MODEL,
+        language: env.TRANSCRIBE_LANGUAGE,
+        audio,
+        filename: job.filename,
+        contentType: job.contentType,
+        prompt: `Nederlands telefoongesprek van Ron de Wit${job.meta.contact ? ` met ${job.meta.contact}` : ""}.`,
+        fetchImpl: deps.fetchImpl,
+      });
+      // Transcript is binnen: audio hoeft nergens meer te bestaan.
+      await env.JOBS.delete(`audio:${job.id}`);
+      await saveJob(env, job);
+    }
+
+    // Transcript meteen veiligstellen op de pagina, los van of de samenvatting lukt.
+    if (!job.transcriptSaved) {
+      const ids = await notion.appendChildren(job.pageId, transcriptSectionBlocks());
+      await notion.appendChildren(ids[ids.length - 1], transcriptBlocks(job.transcript));
+      job.transcriptSaved = true;
+      await saveJob(env, job);
+    }
+
+    // Stap 2: samenvatting.
     const options = await notion.getSelectOptions(env.NOTION_DATA_SOURCE_ID);
     const summary = await summarize({
       apiKey: env.ANTHROPIC_API_KEY,
       model: env.CLAUDE_MODEL,
-      transcript,
+      transcript: job.transcript,
       meta: job.meta,
       options,
       datumLabel,
@@ -99,10 +128,8 @@ export async function processJob(env: Env, job: Job, deps: ProcessDeps = {}): Pr
 
     const props = finalProperties(job.meta, summary, options);
     if (Object.keys(props).length) await notion.updateProperties(job.pageId, props);
-
-    const ids = await notion.appendChildren(job.pageId, summaryBlocks(summary, job.meta, datumLabel));
-    const toggleId = ids[ids.length - 1];
-    await notion.appendChildren(toggleId, transcriptBlocks(transcript));
+    // Samenvatting komt direct na de placeholder, dus vóór het transcript.
+    await notion.appendChildren(job.pageId, summaryBlocks(summary, job.meta, datumLabel), job.placeholderBlockId);
 
     try {
       await notion.deleteBlock(job.placeholderBlockId);
@@ -112,8 +139,8 @@ export async function processJob(env: Env, job: Job, deps: ProcessDeps = {}): Pr
 
     job.status = "done";
     job.finishedAt = new Date().toISOString();
+    delete job.transcript; // staat nu in Notion; niet nodig in KV
     await saveJob(env, job);
-    await env.JOBS.delete(`audio:${job.id}`);
   } catch (err) {
     const message = (err as Error).message ?? String(err);
     job.status = "failed";
@@ -122,13 +149,17 @@ export async function processJob(env: Env, job: Job, deps: ProcessDeps = {}): Pr
     await saveJob(env, job);
     try {
       const last = job.attempts >= MAX_ATTEMPTS;
-      await notion.appendChildren(job.pageId, [
-        block.callout(
-          `Verwerken mislukt (poging ${job.attempts}/${MAX_ATTEMPTS})${last ? ", geen nieuwe poging" : ", wordt opnieuw geprobeerd"}: ${message}`,
-          "⚠️",
-          "red",
-        ),
-      ]);
+      await notion.appendChildren(
+        job.pageId,
+        [
+          block.callout(
+            `Verwerken mislukt (poging ${job.attempts}/${MAX_ATTEMPTS})${last ? ", geen nieuwe poging" : ", wordt opnieuw geprobeerd"}: ${message}`,
+            "⚠️",
+            "red",
+          ),
+        ],
+        job.placeholderBlockId,
+      );
     } catch {
       // Als Notion zelf het probleem is, kunnen we daar ook niets loggen.
     }

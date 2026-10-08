@@ -7,7 +7,7 @@
  * kun je daarna gewoon weggooien.
  */
 import { readFileSync } from "node:fs";
-import { NotionClient, block, finalProperties, initialProperties, summaryBlocks, transcriptBlocks } from "../src/notion";
+import { NotionClient, block, finalProperties, initialProperties, summaryBlocks, transcriptBlocks, transcriptSectionBlocks } from "../src/notion";
 import { summarize } from "../src/summarize";
 import { formatNl, toZonedIso } from "../src/time";
 import type { CallSummary, IngestMeta } from "../src/types";
@@ -68,8 +68,9 @@ async function main() {
 
   const props = finalProperties(meta, summary, options);
   if (Object.keys(props).length) await notion.updateProperties(page.id, props);
-  const ids = await notion.appendChildren(page.id, summaryBlocks(summary, meta, datumLabel));
+  const ids = await notion.appendChildren(page.id, transcriptSectionBlocks());
   await notion.appendChildren(ids[ids.length - 1], transcriptBlocks(transcript));
+  await notion.appendChildren(page.id, summaryBlocks(summary, meta, datumLabel), placeholderId);
   await notion.deleteBlock(placeholderId);
   console.log("Klaar:", page.url);
 }

@@ -23,13 +23,32 @@ Waarom asynchroon: een Shortcut-request loopt na ~60 s op een time-out, terwijl 
 samenvatting van een half uur gesprek rustig 1 tot 3 minuten duurt. Het Shortcut krijgt daarom
 direct de Notion-link terug; de inhoud volgt vanzelf.
 
+## Alleen tekst wordt bewaard, geen audio
+
+Uitgangspunt: er wordt uitsluitend transcriptie en samenvatting opgeslagen. De audio is alleen
+doorvoer.
+
+| Waar | Wat er met de audio gebeurt |
+|---|---|
+| iPhone | Apple bewaart de opname in Notities › Gespreksopnamen. Dat is Apple's keuze; verwijder hem daar na het delen als je hem niet wilt houden. |
+| Cloudflare KV | Alleen tussen upload en transcriptie (normaal 2 tot 4 minuten). Direct na een geslaagde transcriptie wordt hij gewist, en met een harde TTL van 1 uur sowieso, ook als alles misgaat. KV is versleuteld at rest. |
+| OpenAI | Verwerkt de audio voor de transcriptie. API-data wordt niet voor training gebruikt; OpenAI houdt API-verkeer tot 30 dagen voor misbruikdetectie, tenzij je account Zero Data Retention heeft. |
+| Notion | Alleen transcript en samenvatting. |
+| Worker-logs | Nooit audio of transcript; alleen job-ids en foutmeldingen. |
+
+Wil je dat de audio je telefoon helemaal niet verlaat? Gebruik de variant met **on-device
+transcriptie** in [docs/SHORTCUT.md](docs/SHORTCUT.md): de Shortcuts-actie "Transcribeer audio" maakt
+de tekst op de iPhone en stuurt die naar `POST /ingest-text`. Dan gaat alleen tekst naar Claude en
+Notion. Of Apple's on-device model Nederlands aankan, is niet door Apple gedocumenteerd; test het
+met één opname. Werkt het niet, dan blijft de OpenAI-route over.
+
 ## Mappen
 
 | Pad | Wat |
 |---|---|
-| `src/index.ts` | Worker-entrypoint: `POST /ingest`, `GET /jobs/:id`, `POST /process`, `GET /health`, cron |
-| `src/ingest.ts` | Upload ontvangen, placeholderpagina maken, job in KV zetten |
-| `src/process.ts` | Jobverwerking: transcriberen → samenvatten → pagina vullen, met retries |
+| `src/index.ts` | Worker-entrypoint: `POST /ingest`, `POST /ingest-text`, `GET /jobs/:id`, `POST /process`, `GET /health`, cron |
+| `src/ingest.ts` | Upload (audio of tekst) ontvangen, placeholderpagina maken, job in KV zetten |
+| `src/process.ts` | Jobverwerking in twee herstartbare stappen: transcriberen (audio direct wissen) → samenvatten |
 | `src/transcribe.ts` | OpenAI-transcriptie (Nederlands, auto-chunking) |
 | `src/summarize.ts` | Claude-samenvatting met afgedwongen JSON-schema; prompts komen uit je Notion-templates |
 | `src/notion.ts` | Notion REST-client (API-versie 2025-09-03) en blokbouwers |
@@ -42,7 +61,7 @@ direct de Notion-link terug; de inhoud volgt vanzelf.
 
 ```bash
 npm install
-npm test                 # 33 tests, geen API-keys nodig
+npm test                 # 39 tests, geen API-keys nodig
 npm run typecheck
 ```
 
@@ -72,7 +91,7 @@ Marketing het interne profiel; anders kiest Claude zelf. Aanpassen: `src/summari
 ## Beperkingen, eerlijk
 
 - **iOS laat geen apps meeluisteren.** Opnemen gaat via Apple's eigen knop in de Telefoon-app (iOS 18.1+). Beide partijen horen een melding. Er is geen automatische trigger "gesprek beëindigd"; het delen vanuit Notities is de ene handmatige tik.
-- **Apple transcribeert niet in het Nederlands**, daarom gaat de audio naar OpenAI. Dat is een bewuste privacy-afweging: audio verlaat je telefoon. OpenAI gebruikt API-data niet voor training, maar check je eigen afspraken met klanten.
+- **Apple's gesprekstranscriptie werkt niet in het Nederlands**, daarom gaat de audio standaard naar OpenAI (zie de tabel hierboven voor wat er precies wordt bewaard). Alternatief zonder audio-upload: de on-device variant in `docs/SHORTCUT.md`.
 - **Max. 24 MB per opname** (OpenAI-limiet is 25 MB). Apple's opnames zijn compact; een gesprek van ruim een uur past meestal. Te groot? Het Shortcut kan de audio eerst hercoderen met "Codeer media" (alleen audio).
 - **Notion's eigen "AI meeting notes"-blok** kan niet via de API worden aangemaakt. De pagina krijgt gewone blokken met dezelfde informatie. Je kunt in Notion wel nog Notion AI over het transcript laten lopen.
 - **Cloudflare gratis tier** geeft 10 ms CPU per aanroep. Netwerk-wachttijd telt niet mee, dus dit past normaal. Zie je in `wrangler tail` toch "CPU time limit exceeded", dan is Workers Paid (5 dollar per maand, 30 s CPU) de oplossing.

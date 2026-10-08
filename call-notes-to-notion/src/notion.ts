@@ -92,17 +92,23 @@ export class NotionClient {
     await this.request("PATCH", `/pages/${pageId}`, { properties });
   }
 
-  /** Voegt blokken toe in batches van 100. Geeft de ids van de aangemaakte top-level blokken terug. */
-  async appendChildren(blockId: string, blocks: unknown[]): Promise<string[]> {
+  /**
+   * Voegt blokken toe in batches van 100. Met `after` worden ze direct na dat blok
+   * ingevoegd in plaats van onderaan. Geeft de ids van de aangemaakte blokken terug.
+   */
+  async appendChildren(blockId: string, blocks: unknown[], after?: string): Promise<string[]> {
     const ids: string[] = [];
+    let anchor = after;
     for (let i = 0; i < blocks.length; i += CHILDREN_BATCH) {
       const batch = blocks.slice(i, i + CHILDREN_BATCH);
       const res = await this.request<{ results: { id: string }[] }>(
         "PATCH",
         `/blocks/${blockId}/children`,
-        { children: batch },
+        anchor ? { children: batch, after: anchor } : { children: batch },
       );
-      ids.push(...res.results.map((r) => r.id));
+      const created = res.results.map((r) => r.id);
+      ids.push(...created);
+      if (anchor) anchor = created[created.length - 1];
     }
     return ids;
   }
@@ -273,9 +279,12 @@ export function summaryBlocks(summary: CallSummary, meta: IngestMeta, datumLabel
     for (const p of splitText(meta.notities)) blocks.push(block.paragraph(p));
   }
 
-  blocks.push(block.divider());
-  blocks.push(block.toggle("Transcript"));
   return blocks;
+}
+
+/** Divider + lege toggle; het transcript zelf gaat daarna in de toggle (zie transcriptBlocks). */
+export function transcriptSectionBlocks(): unknown[] {
+  return [block.divider(), block.toggle("Transcript")];
 }
 
 export function transcriptBlocks(transcript: string): unknown[] {

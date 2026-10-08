@@ -70,6 +70,24 @@ Zie je bij de opname geen deelknop, kies dan **Bewaar in Bestanden** en deel het
 Het werkt net zo goed op een Dictafoon-opname of een audiobestand uit Bestanden, bijvoorbeeld voor
 een live meeting die je met je telefoon op tafel hebt opgenomen.
 
+## Variant B: transcriptie op de iPhone, audio verlaat het toestel niet
+
+Zelfde Shortcut, maar stap 8 en 9 worden anders. Werkt alleen als Apple's on-device model jouw
+opname in het Nederlands kan transcriberen; test dat eerst met één opname.
+
+8. **Transcribeer audio** (Transcribe Audio) → invoer: **Opdrachtinvoer**. Hernoem resultaat naar `Transcript`.
+   (Lange opnames kunnen hier op een time-out lopen; dan is variant A de oplossing.)
+9. **Haal inhoud van URL op** (Get Contents of URL)
+   - URL: `https://call-notes-to-notion.<account>.workers.dev/ingest-text`
+   - Methode: **POST**
+   - Kopteksten: `Authorization` = `Bearer <jouw INGEST_TOKEN>`
+   - Hoofdtekst aanvragen: **JSON** met de velden
+     `transcript` = `Transcript`, `contact` = `Contact`, `categorie` = `Categorie`, `notities` = `Notities`
+   De stappen 5 t/m 7 (URL-coderen) vervallen; JSON heeft dat niet nodig.
+
+De rest (stap 10 t/m 12) blijft gelijk. De Worker slaat dan de transcriptiestap over; alleen de
+samenvatting loopt nog via Claude.
+
 ## Varianten
 
 - **Minder vragen**: haal stap 1, 4 of 2–3 weg; de Worker vult dan zelf contact en categorie via Claude.

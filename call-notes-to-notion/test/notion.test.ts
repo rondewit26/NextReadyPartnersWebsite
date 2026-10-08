@@ -7,6 +7,7 @@ import {
   splitText,
   summaryBlocks,
   transcriptBlocks,
+  transcriptSectionBlocks,
 } from "../src/notion";
 import type { CallSummary, IngestMeta } from "../src/types";
 import { mockFetch } from "./helpers";
@@ -97,7 +98,11 @@ describe("summaryBlocks", () => {
     expect(blocks[0].callout.rich_text[0].text.content).toContain("Peter Kraan, Improvery");
     const todos = blocks.filter((b) => b.type === "to_do").map((b) => b.to_do.rich_text[0].text.content);
     expect(todos).toEqual(["Offerte sturen — Ron, vrijdag", "Demo plannen"]);
-    expect(blocks.at(-1).type).toBe("toggle");
+    expect(blocks.some((b) => b.type === "toggle")).toBe(false);
+  });
+
+  it("transcriptSectionBlocks is divider + toggle", () => {
+    expect((transcriptSectionBlocks() as any[]).map((b) => b.type)).toEqual(["divider", "toggle"]);
   });
 
   it("transcriptBlocks geeft paragrafen", () => {
@@ -115,6 +120,16 @@ describe("NotionClient", () => {
     const appends = calls.filter((c) => c.url.endsWith("/blocks/blk/children"));
     expect(appends.map((c) => c.body.children.length)).toEqual([100, 100, 50]);
     expect(appends[0].headers["Notion-Version"]).toBe("2025-09-03");
+    expect(appends[0].body.after).toBeUndefined();
+  });
+
+  it("appendChildren met `after` schuift het anker per batch op", async () => {
+    const { fetchImpl, calls } = mockFetch();
+    const client = new NotionClient("tok", fetchImpl);
+    await client.appendChildren("blk", Array.from({ length: 150 }, (_, i) => ({ i })), "anker");
+    const appends = calls.filter((c) => c.url.endsWith("/blocks/blk/children"));
+    expect(appends[0].body.after).toBe("anker");
+    expect(appends[1].body.after).toBe("blk-b100");
   });
 
   it("gooit een NotionError met status bij een fout", async () => {

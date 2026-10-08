@@ -68,6 +68,11 @@ curl -X POST "https://call-notes-to-notion.<account>.workers.dev/ingest?contact=
   -H "Authorization: Bearer <INGEST_TOKEN>" \
   -H "Content-Type: audio/x-m4a" \
   --data-binary @een-korte-opname.m4a
+
+# Of zonder audio, met een kant-en-klaar transcript:
+curl -X POST https://call-notes-to-notion.<account>.workers.dev/ingest-text \
+  -H "Authorization: Bearer <INGEST_TOKEN>" -H "Content-Type: application/json" \
+  -d "$(jq -n --rawfile t test/fixtures/transcript.txt '{transcript: $t, contact: "Peter Kraan, Improvery", categorie: "Klanten"}')"
 ```
 
 Je krijgt `202` met een `url`. Binnen 2 tot 4 minuten (cron) is de pagina gevuld. Wil je niet wachten:
@@ -98,6 +103,7 @@ curl -X POST "http://localhost:8787/__scheduled?cron=*/2+*+*+*+*"   # cron handm
 | `502 Notion onbereikbaar: ... 404` | Integratie niet gekoppeld aan de pagina (stap 1.4) of verkeerd data source-id. |
 | `413` | Opname > 24 MB. Hercodeer in het Shortcut of knip. |
 | ⚠️-callout "OpenAI transcriptie mislukt (400)" | Meestal een onbekend audioformaat. Controleer `filename`/`Content-Type`; m4a werkt. |
+| Pagina heeft wel transcript maar geen samenvatting | Samenvatting mislukt na transcriptie; de audio is dan al gewist, de retry gebruikt het bewaarde transcript. Zie de ⚠️-callout. |
 | ⚠️-callout "Claude weigerde..." | Zeer zeldzaam bij zakelijke gesprekken. De tekst staat op de pagina; vat handmatig samen. |
 | Pagina blijft op ⏳ staan | `GET /jobs/<jobId>` met je token geeft status en fout. `npx wrangler tail` toont de cron-logs. |
 | `CPU time limit exceeded` in tail | Workers Paid ($5/mnd) inschakelen. |

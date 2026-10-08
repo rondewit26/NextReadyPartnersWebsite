@@ -1,4 +1,4 @@
-import { handleIngest, isAuthorized, json } from "./ingest";
+import { handleIngest, handleIngestText, isAuthorized, json } from "./ingest";
 import { processPendingJobs } from "./process";
 import type { Env, Job } from "./types";
 
@@ -12,6 +12,11 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/ingest") {
       return handleIngest(request, env);
+    }
+
+    // Transcript al op de telefoon gemaakt: alleen samenvatten, audio komt hier nooit.
+    if (request.method === "POST" && url.pathname === "/ingest-text") {
+      return handleIngestText(request, env);
     }
 
     // Status van een job opvragen (handig bij debuggen vanaf de telefoon).
