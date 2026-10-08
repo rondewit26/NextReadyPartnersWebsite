@@ -1,0 +1,32 @@
+name = "call-notes-to-notion"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Elke 2 minuten: verwerk openstaande jobs (transcriptie -> samenvatting -> Notion).
+[triggers]
+crons = ["*/2 * * * *"]
+
+# KV-namespace voor jobs + tijdelijke audio. Maak aan met:
+#   npx wrangler kv namespace create JOBS
+# en plak het id hieronder.
+[[kv_namespaces]]
+binding = "JOBS"
+id = "VUL_HIER_HET_KV_ID_IN"
+
+[vars]
+# Notion data source (de "NIET VERWIJDEREN! Meeting notes database").
+NOTION_DATA_SOURCE_ID = "19e0e5af-5d48-82ed-a90d-87cdbcef3cde"
+# Tijdzone voor het Datum-veld.
+TIMEZONE = "Europe/Amsterdam"
+# Taal van de gesprekken (ISO-639-1) voor transcriptie.
+TRANSCRIBE_LANGUAGE = "nl"
+# Modellen
+TRANSCRIBE_MODEL = "gpt-4o-transcribe"
+CLAUDE_MODEL = "claude-opus-5-5"
+
+# Secrets (niet hier, maar via `npx wrangler secret put <NAAM>`):
+#   INGEST_TOKEN        - zelfgekozen lang wachtwoord dat het Shortcut meestuurt
+#   OPENAI_API_KEY      - transcriptie
+#   ANTHROPIC_API_KEY   - samenvatting
+#   NOTION_TOKEN        - interne Notion-integratie (ntn_...)
