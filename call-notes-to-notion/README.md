@@ -107,6 +107,10 @@ Marketing het interne profiel; anders kiest Claude zelf. Aanpassen: `src/summari
 Grofweg een kwartje tot 30 cent per half uur. Goedkoper kan door `CLAUDE_MODEL` op `claude-sonnet-5-5`
 te zetten of `TRANSCRIBE_MODEL` op `gpt-4o-mini-transcribe`; beide via `wrangler.toml`.
 
+## Roadmap
+
+- **Sprekerherkenning (gepland, na een paar echte gesprekken).** Variant met OpenAI's `gpt-4o-transcribe-diarize`, zodat het transcript sprekerlabels heeft en actiepunten aan de juiste persoon worden toegewezen. Aandachtspunten uit de OpenAI-documentatie: `chunking_strategy` is verplicht voor opnames langer dan 30 seconden, een `prompt` wordt niet ondersteund, en bekende sprekers kunnen met korte referentiefragmenten worden meegegeven. Beslismoment: de eerste echte gesprekken laten zien hoe vaak de eigenaar van een actiepunt nu verkeerd of leeg is.
+
 ## Verplaatsen naar een eigen repository
 
 Deze map is zelfstandig (eigen `package.json`). Maak op GitHub een lege repo `call-notes-to-notion` aan en:
