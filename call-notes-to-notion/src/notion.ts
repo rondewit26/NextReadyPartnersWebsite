@@ -11,6 +11,13 @@ export const CHILDREN_BATCH = 100;
 
 export type FetchLike = typeof fetch;
 
+/**
+ * De globale fetch, aangeroepen als losse functie. Cloudflare Workers gooit "Illegal invocation"
+ * als `fetch` als methode van een object wordt aangeroepen (`this.fetchImpl(...)`), dus nooit
+ * `fetch` zelf als standaardwaarde opslaan.
+ */
+export const defaultFetch: FetchLike = (input, init) => fetch(input, init);
+
 export class NotionError extends Error {
   constructor(
     message: string,
@@ -35,7 +42,7 @@ export interface CreatedPage {
 export class NotionClient {
   constructor(
     private readonly token: string,
-    private readonly fetchImpl: FetchLike = fetch,
+    private readonly fetchImpl: FetchLike = defaultFetch,
   ) {}
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {

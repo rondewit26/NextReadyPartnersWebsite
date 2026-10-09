@@ -1,4 +1,4 @@
-import type { FetchLike } from "./notion";
+import { defaultFetch, type FetchLike } from "./notion";
 
 export class TranscribeError extends Error {
   constructor(
@@ -28,7 +28,7 @@ export interface TranscribeArgs {
  * zelf in stukken knippen. Limiet: 25 MB per bestand.
  */
 export async function transcribe(args: TranscribeArgs): Promise<string> {
-  const fetchImpl = args.fetchImpl ?? fetch;
+  const fetchImpl = args.fetchImpl ?? defaultFetch;
   const form = new FormData();
   form.append("file", new Blob([args.audio], { type: args.contentType }), args.filename);
   form.append("model", args.model);
