@@ -23,10 +23,10 @@ const contentType = mime[extname(path).toLowerCase()] ?? "application/octet-stre
 const OLD_PROMPT = "Nederlands telefoongesprek van Ron de Wit met Testpersoon.";
 
 const variants = [
-  { label: "A  gpt-4o-transcribe, standaard (geen prompt, chunking auto)  [huidige instelling]", model: "gpt-4o-transcribe", chunking: "auto" as const },
-  { label: "B  gpt-4o-transcribe, zonder chunking", model: "gpt-4o-transcribe", chunking: "off" as const },
+  { label: "A  gpt-4o-transcribe met chunking auto (was de standaard)", model: "gpt-4o-transcribe", chunking: "auto" as const },
+  { label: "B  gpt-4o-transcribe, zonder chunking  [huidige instelling]", model: "gpt-4o-transcribe", chunking: "off" as const },
   { label: "C  gpt-4o-transcribe met de oude prompt (laat het lek zien)", model: "gpt-4o-transcribe", chunking: "auto" as const, prompt: OLD_PROMPT },
-  { label: "D  whisper-1", model: "whisper-1", chunking: "off" as const },
+  { label: "D  whisper-1  [vangnet bij fouten]", model: "whisper-1", chunking: "off" as const },
 ];
 
 console.log(`Bestand: ${basename(path)} (${(buf.length / 1048576).toFixed(1)} MB)\n`);

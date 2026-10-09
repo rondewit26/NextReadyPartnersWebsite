@@ -104,7 +104,7 @@ curl -X POST "http://localhost:8787/__scheduled?cron=*/2+*+*+*+*"   # cron handm
 | `413` | Opname > 24 MB. Hercodeer in het Shortcut of knip. |
 | ⚠️-callout "OpenAI transcriptie mislukt (400)" | Meestal een onbekend audioformaat. Controleer `filename`/`Content-Type`; m4a werkt. |
 | Pagina heeft wel transcript maar geen samenvatting | Samenvatting mislukt na transcriptie; de audio is dan al gewist, de retry gebruikt het bewaarde transcript. Zie de ⚠️-callout. |
-| Transcript mist namen of bevat zinnen die je niet zei | Draai `OPENAI_API_KEY=sk-... npx tsx scripts/compare-transcribe.ts "/pad/opname.m4a"`: dat toont dezelfde opname met vier instellingen naast elkaar. Een hint (`TRANSCRIBE_PROMPT`) staat bewust uit, want gpt-4o-transcribe kan die als transcript teruggeven. Chunking uit: `TRANSCRIBE_CHUNKING = "off"` in `wrangler.toml`. |
+| Transcript mist namen of bevat zinnen die je niet zei | Draai `OPENAI_API_KEY=sk-... npx tsx scripts/compare-transcribe.ts "/pad/opname.m4a"`: dat toont dezelfde opname met vier instellingen naast elkaar. Een hint (`TRANSCRIBE_PROMPT`) staat bewust uit, want gpt-4o-transcribe kan die als transcript teruggeven. Chunking staat standaard uit: in de eerste vergelijking verloor `chunking_strategy: auto` woorden en namen. Opnieuw aanzetten kan met `TRANSCRIBE_CHUNKING = "auto"` in `wrangler.toml`. |
 | ⚠️-callout "Claude weigerde..." | Zeer zeldzaam bij zakelijke gesprekken. De tekst staat op de pagina; vat handmatig samen. |
 | Pagina blijft op ⏳ staan | `GET /jobs/<jobId>` met je token geeft status en fout. `npx wrangler tail` toont de cron-logs. |
 | `CPU time limit exceeded` in tail | Workers Paid ($5/mnd) inschakelen. |

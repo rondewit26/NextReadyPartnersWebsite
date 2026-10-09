@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { handleIngest, handleIngestText } from "../src/ingest";
-import { processPendingJobs, shouldProcess } from "../src/process";
+import { canFallBack, processPendingJobs, shouldProcess } from "../src/process";
+import { TranscribeError } from "../src/transcribe";
 import type { CallSummary, Job } from "../src/types";
 import { MemoryKV, ingestRequest, makeEnv, mockFetch } from "./helpers";
 
@@ -53,7 +54,7 @@ describe("processPendingJobs", () => {
     const form = openai.body as FormData;
     expect(form.get("model")).toBe("gpt-4o-transcribe");
     expect(form.get("language")).toBe("nl");
-    expect(form.get("chunking_strategy")).toBe("auto");
+    expect(form.get("chunking_strategy")).toBeNull(); // chunking auto verloor woorden
     expect(form.get("prompt")).toBeNull(); // geen prompt: die lekte eerder als transcript
     expect((form.get("file") as File).name).toBe("gesprek-job-1.m4a");
     expect(openai.headers.Authorization).toBe("Bearer sk-test");
@@ -210,5 +211,49 @@ describe("shouldProcess", () => {
     expect(shouldProcess({ ...base, startedAt: "2026-10-08T12:25:00Z" }, t)).toBe(false);
     expect(shouldProcess({ ...base, startedAt: "2026-10-08T12:00:00Z" }, t)).toBe(true);
     expect(shouldProcess({ ...base, status: "done" }, t)).toBe(false);
+  });
+});
+
+describe("transcriptie-vangnet", () => {
+  const ok = async () => summary;
+  const run = async (env: ReturnType<typeof makeEnv>, kv: MemoryKV, transcribe: any, fetchImpl: typeof fetch) =>
+    processPendingJobs(env, { fetchImpl, now, log: () => {}, summarize: ok, transcribe });
+
+  it("probeert whisper-1 zonder chunking als het eerste model met 400 faalt", async () => {
+    const kv = new MemoryKV();
+    const { fetchImpl } = mockFetch();
+    await ingest(kv, fetchImpl);
+    const seen: { model: string; chunking?: string }[] = [];
+    const transcribe = async (a: any) => {
+      seen.push({ model: a.model, chunking: a.chunking });
+      if (a.model === "gpt-4o-transcribe") throw new TranscribeError("audio te lang", 400);
+      return "Tekst via whisper.";
+    };
+    const result = await run(makeEnv(kv), kv, transcribe, fetchImpl);
+    expect(result.processed).toEqual(["job-1"]);
+    expect(seen).toEqual([{ model: "gpt-4o-transcribe", chunking: "off" }, { model: "whisper-1", chunking: "off" }]);
+  });
+
+  it("probeert niet opnieuw bij een foute key, bij 429 of als het vangnet uit staat", async () => {
+    for (const [status, fallbackSetting] of [[401, undefined], [429, undefined], [400, ""]] as const) {
+      const kv = new MemoryKV();
+      const { fetchImpl } = mockFetch();
+      await ingest(kv, fetchImpl);
+      let calls = 0;
+      const transcribe = async () => { calls++; throw new TranscribeError("nee", status); };
+      const env = { ...makeEnv(kv), ...(fallbackSetting === undefined ? {} : { TRANSCRIBE_FALLBACK_MODEL: fallbackSetting }) };
+      const result = await run(env, kv, transcribe, fetchImpl);
+      expect(result.failed).toEqual(["job-1"]);
+      expect(calls).toBe(1);
+    }
+  });
+
+  it("canFallBack: alleen bij opname- of modelproblemen en een ander model", () => {
+    expect(canFallBack(new TranscribeError("x", 500), "whisper-1", "gpt-4o-transcribe")).toBe(true);
+    expect(canFallBack(new TranscribeError("x", 413), "whisper-1", "gpt-4o-transcribe")).toBe(true);
+    expect(canFallBack(new TranscribeError("x", 401), "whisper-1", "gpt-4o-transcribe")).toBe(false);
+    expect(canFallBack(new TranscribeError("x", 422), "whisper-1", "gpt-4o-transcribe")).toBe(false);
+    expect(canFallBack(new TranscribeError("x", 500), "gpt-4o-transcribe", "gpt-4o-transcribe")).toBe(false);
+    expect(canFallBack(new Error("x"), "whisper-1", "gpt-4o-transcribe")).toBe(false);
   });
 });

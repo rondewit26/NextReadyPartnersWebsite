@@ -12,8 +12,10 @@ export interface Env {
   TRANSCRIBE_MODEL: string;
   /** Optioneel. Standaard leeg: gpt-4o-transcribe kan een prompt als transcript teruggeven. */
   TRANSCRIBE_PROMPT?: string;
-  /** Optioneel: "off" zet chunking_strategy uit. Standaard "auto". */
+  /** Optioneel: "auto" zet chunking_strategy aan. Standaard uit, want dat verloor woorden. */
   TRANSCRIBE_CHUNKING?: string;
+  /** Optioneel: model dat wordt geprobeerd als het eerste faalt (bv. te lange opname). Standaard "whisper-1"; leeg = uit. */
+  TRANSCRIBE_FALLBACK_MODEL?: string;
   CLAUDE_MODEL: string;
 }
 

@@ -107,6 +107,21 @@ Marketing het interne profiel; anders kiest Claude zelf. Aanpassen: `src/summari
 Grofweg een kwartje tot 30 cent per half uur. Goedkoper kan door `CLAUDE_MODEL` op `claude-sonnet-5-5`
 te zetten of `TRANSCRIBE_MODEL` op `gpt-4o-mini-transcribe`; beide via `wrangler.toml`.
 
+## Kwaliteit van de transcriptie
+
+Eerste vergelijking op één echte opname van 40 seconden (`scripts/compare-transcribe.ts`):
+
+| Instelling | Resultaat |
+|---|---|
+| gpt-4o-transcribe met chunking auto | Hakkelig, woorden en namen kwijt of verhaspeld |
+| gpt-4o-transcribe met oude prompt | De prompt-tekst komt als transcript terug |
+| gpt-4o-transcribe zonder chunking | Vloeiende tekst, juiste namen (huidige instelling) |
+| whisper-1 | Vloeiende tekst, juiste namen (vangnet) |
+
+Dat is één opname. Test een gesprek van 10 tot 30 minuten voordat je erop vertrouwt. Faalt het eerste
+model, bijvoorbeeld omdat de opname te lang is, dan probeert de Worker automatisch `whisper-1`
+(`TRANSCRIBE_FALLBACK_MODEL`, leeg zetten schakelt dit uit).
+
 ## Roadmap
 
 - **Sprekerherkenning (gepland, na een paar echte gesprekken).** Variant met OpenAI's `gpt-4o-transcribe-diarize`, zodat het transcript sprekerlabels heeft en actiepunten aan de juiste persoon worden toegewezen. Aandachtspunten uit de OpenAI-documentatie: `chunking_strategy` is verplicht voor opnames langer dan 30 seconden, een `prompt` wordt niet ondersteund, en bekende sprekers kunnen met korte referentiefragmenten worden meegegeven. Beslismoment: de eerste echte gesprekken laten zien hoe vaak de eigenaar van een actiepunt nu verkeerd of leeg is.

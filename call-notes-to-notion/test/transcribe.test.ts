@@ -6,19 +6,19 @@ const base = { apiKey: "k", model: "gpt-4o-transcribe", language: "nl", audio: n
 const formOf = (calls: { body: unknown }[]) => calls.find((c) => c.body instanceof FormData)!.body as FormData;
 
 describe("transcribe", () => {
-  it("stuurt standaard geen prompt mee (de prompt lekte als transcript) en wel chunking auto", async () => {
+  it("stuurt standaard geen prompt en geen chunking mee (beide verloren woorden of lekten tekst)", async () => {
     const { fetchImpl, calls } = mockFetch();
     await transcribe({ ...base, fetchImpl });
     const form = formOf(calls);
     expect(form.get("prompt")).toBeNull();
-    expect(form.get("chunking_strategy")).toBe("auto");
+    expect(form.get("chunking_strategy")).toBeNull();
     expect(form.get("language")).toBe("nl");
   });
 
-  it("laat chunking_strategy weg bij chunking 'off'", async () => {
+  it("stuurt chunking_strategy alleen mee bij chunking 'auto'", async () => {
     const { fetchImpl, calls } = mockFetch();
-    await transcribe({ ...base, chunking: "off", fetchImpl });
-    expect(formOf(calls).get("chunking_strategy")).toBeNull();
+    await transcribe({ ...base, chunking: "auto", fetchImpl });
+    expect(formOf(calls).get("chunking_strategy")).toBe("auto");
   });
 
   it("stuurt een prompt alleen mee als die expliciet is opgegeven", async () => {

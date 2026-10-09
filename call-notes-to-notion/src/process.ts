@@ -9,7 +9,7 @@ import {
 } from "./notion";
 import { summarize as defaultSummarize, type Summarizer } from "./summarize";
 import { formatNl, minutesBetween, weekdayNl } from "./time";
-import { transcribe as defaultTranscribe } from "./transcribe";
+import { TranscribeError, transcribe as defaultTranscribe } from "./transcribe";
 import { JOB_TTL_SECONDS, MAX_ATTEMPTS, STALE_PROCESSING_MINUTES, type Env, type Job } from "./types";
 
 export interface ProcessDeps {
@@ -38,6 +38,17 @@ export function shouldProcess(job: Job, now: Date): boolean {
     return !!job.startedAt && minutesBetween(job.startedAt, now) > STALE_PROCESSING_MINUTES && job.attempts < MAX_ATTEMPTS;
   }
   return false;
+}
+
+/**
+ * Een tweede poging met een ander model heeft alleen zin bij een probleem met de opname of het
+ * model zelf (bijv. te lang, niet te verwerken, serverfout), niet bij een foute key, een
+ * volle tegoedlimiet of een leeg transcript.
+ */
+export function canFallBack(err: unknown, fallbackModel: string, primaryModel: string): boolean {
+  if (!fallbackModel || fallbackModel === primaryModel) return false;
+  if (!(err instanceof TranscribeError)) return false;
+  return err.status === 400 || err.status === 413 || err.status >= 500;
 }
 
 async function saveJob(env: Env, job: Job): Promise<void> {
@@ -92,17 +103,27 @@ export async function processJob(env: Env, job: Job, deps: ProcessDeps = {}): Pr
     if (!job.transcript) {
       const audio = await env.JOBS.get(`audio:${job.id}`, "arrayBuffer");
       if (!audio) throw new Error("Audio niet (meer) beschikbaar (al gewist of verlopen); upload de opname opnieuw.");
-      job.transcript = await transcribe({
+      const request = {
         apiKey: env.OPENAI_API_KEY,
-        model: env.TRANSCRIBE_MODEL,
         language: env.TRANSCRIBE_LANGUAGE,
         audio,
         filename: job.filename,
         contentType: job.contentType,
         prompt: env.TRANSCRIBE_PROMPT?.trim() || undefined,
-        chunking: env.TRANSCRIBE_CHUNKING === "off" ? "off" : "auto",
         fetchImpl: deps.fetchImpl,
-      });
+      };
+      try {
+        job.transcript = await transcribe({
+          ...request,
+          model: env.TRANSCRIBE_MODEL,
+          chunking: env.TRANSCRIBE_CHUNKING === "auto" ? "auto" : "off",
+        });
+      } catch (err) {
+        const fallback = (env.TRANSCRIBE_FALLBACK_MODEL ?? "whisper-1").trim();
+        if (!canFallBack(err, fallback, env.TRANSCRIBE_MODEL)) throw err;
+        (deps.log ?? console.log)(`job ${job.id}: ${env.TRANSCRIBE_MODEL} faalde (${(err as Error).message}); opnieuw met ${fallback}`);
+        job.transcript = await transcribe({ ...request, model: fallback, chunking: "off" });
+      }
       // Transcript is binnen: audio hoeft nergens meer te bestaan.
       await env.JOBS.delete(`audio:${job.id}`);
       await saveJob(env, job);

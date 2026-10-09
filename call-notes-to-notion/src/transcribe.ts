@@ -22,15 +22,17 @@ export interface TranscribeArgs {
    * letterlijk als transcript teruggeven (gebleken bij de eerste echte opname).
    */
   prompt?: string;
-  /** "auto" laat de server lange opnames zelf knippen; "off" stuurt geen chunking_strategy mee. */
+  /**
+   * "off" (standaard) stuurt geen chunking_strategy mee. "auto" laat de server de opname op
+   * spraakpauzes knippen, maar dat verloor in de eerste echte vergelijking woorden en namen.
+   */
   chunking?: "auto" | "off";
   fetchImpl?: FetchLike;
 }
 
 /**
  * Transcribeert audio via OpenAI (`gpt-4o-transcribe` standaard). Nederlands wordt
- * expliciet meegegeven; `chunking_strategy: auto` laat de server lange opnames
- * zelf in stukken knippen. Limiet: 25 MB per bestand.
+ * expliciet meegegeven. Limiet: 25 MB per bestand.
  */
 export async function transcribe(args: TranscribeArgs): Promise<string> {
   const fetchImpl = args.fetchImpl ?? defaultFetch;
@@ -39,7 +41,7 @@ export async function transcribe(args: TranscribeArgs): Promise<string> {
   form.append("model", args.model);
   form.append("language", args.language);
   form.append("response_format", "json");
-  if ((args.chunking ?? "auto") === "auto") form.append("chunking_strategy", "auto");
+  if (args.chunking === "auto") form.append("chunking_strategy", "auto");
   if (args.prompt) form.append("prompt", args.prompt);
 
   const res = await fetchImpl("https://api.openai.com/v1/audio/transcriptions", {
