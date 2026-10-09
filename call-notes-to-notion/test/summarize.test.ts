@@ -29,6 +29,21 @@ describe("summarize prompts", () => {
     expect(sys).toContain("Nederlands");
     expect(sys).toContain("Contact | Bedrijf | Onderwerp");
   });
+
+  it("systeemprompt verbiedt verzonnen acties en gokken op eigenaar of datum", () => {
+    const sys = buildSystemPrompt();
+    expect(sys).toContain("Voeg geen actiepunten, vragen of voorbereidende stappen toe");
+    expect(sys).toContain('laat je "eigenaar" leeg');
+    expect(sys).toContain("zoals uitgesproken");
+  });
+
+  it("zet de weekdag in de gebruikersprompt", () => {
+    const prompt = buildUserPrompt({
+      transcript: "x", options, datumLabel: "09-10-2026 09:52", weekday: "vrijdag",
+      meta: { datum: "2026-10-09T09:52:00+02:00" },
+    });
+    expect(prompt).toContain("Datum/tijd gesprek: vrijdag 09-10-2026 09:52");
+  });
 });
 
 describe("summarySchema", () => {

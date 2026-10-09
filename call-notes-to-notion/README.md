@@ -61,7 +61,7 @@ met één opname. Werkt het niet, dan blijft de OpenAI-route over.
 
 ```bash
 npm install
-npm test                 # 39 tests, geen API-keys nodig
+npm test                 # 44 tests, geen API-keys nodig
 npm run typecheck
 ```
 

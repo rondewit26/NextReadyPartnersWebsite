@@ -20,6 +20,8 @@ export interface SummarizeArgs {
   meta: IngestMeta;
   options: SelectOptions;
   datumLabel: string;
+  /** Weekdag van het gesprek ("vrijdag"), nodig om "volgende week dinsdag" goed te duiden. */
+  weekday?: string;
 }
 
 export type Summarizer = (args: SummarizeArgs) => Promise<CallSummary>;
@@ -71,15 +73,15 @@ export function buildSystemPrompt(): string {
 Regels:
 - Schrijf in het Nederlands, zakelijk, concreet en zonder opsmuk. Geen inleidende zinnen als "In dit gesprek...".
 - Het transcript is automatisch gegenereerd: namen en bedrijven kunnen verkeerd gespeld zijn. Gebruik de meegegeven contactnaam als die er is; gok anders de meest waarschijnlijke spelling en wees consistent.
-- De sprekers zijn niet gelabeld. Leid uit de context af wie Ron is en wie de gesprekspartner is.
-- Verzin niets. Als iets niet in het transcript staat, laat het veld leeg (lege string of lege lijst).
+- De sprekers zijn niet gelabeld. Leid uit de context af wie Ron is en wie de gesprekspartner is. Wijs een actie of afspraak alleen aan een persoon toe als de context dat duidelijk maakt; bij twijfel laat je "eigenaar" leeg in plaats van te gokken.
+- Verzin niets. Neem alleen op wat in het transcript wordt gezegd of er direct uit volgt. Voeg geen actiepunten, vragen of voorbereidende stappen toe die niet besproken zijn, ook niet als ze logisch lijken. Als iets niet in het transcript staat, laat het veld leeg (lege string of lege lijst).
 - "titel": kort en herkenbaar in het formaat "Contact | Bedrijf | Onderwerp" (laat delen weg die onbekend zijn), max. 80 tekens.
 - "contact": naam en bedrijf van de gesprekspartner, bv. "Peter Kraan, Improvery". Leeg als onbekend.
 - "categorie" en "project": kies uitsluitend uit de opgegeven opties; kies "" als geen optie duidelijk past. Kies een project alleen als het gesprek er onmiskenbaar over gaat.
 - "samenvatting": 1 tot 3 alinea's lopende tekst met de essentie en de context.
 - "kernpunten": 3 tot 8 bullets met de belangrijkste inhoud.
 - "besluiten_en_afspraken": wat is er concreet afgesproken of besloten.
-- "actiepunten": per actie de eigenaar (naam, of "Ron" / naam gesprekspartner) en deadline als genoemd, anders lege string.
+- "actiepunten": per actie de eigenaar (naam, of "Ron" / naam gesprekspartner) en deadline als genoemd, anders lege string. Schrijf een deadline zoals uitgesproken ("vrijdag", "volgende week dinsdag"). Voeg er alleen een datum aan toe als je die zeker weet op basis van de gespreksdatum en weekdag; bij twijfel laat je de datum weg.
 - "openstaande_vragen": vragen die nog beantwoord moeten worden.
 - "vervolg": het afgesproken vervolg in 1 of 2 zinnen (volgende stap, wie neemt initiatief, wanneer).`;
 }
@@ -91,7 +93,7 @@ export function buildUserPrompt(args: Omit<SummarizeArgs, "apiKey" | "model">): 
     `Gespreksprofiel: ${profile}`,
     PROFILES[profile],
     "",
-    `Datum/tijd gesprek: ${datumLabel}`,
+    `Datum/tijd gesprek: ${[args.weekday, datumLabel].filter(Boolean).join(" ")}`,
     `Contact (opgegeven door Ron): ${meta.contact?.trim() || "onbekend"}`,
     `Categorie (opgegeven door Ron): ${meta.categorie?.trim() || "niet opgegeven, kies zelf"}`,
     `Project (opgegeven door Ron): ${meta.project?.trim() || "niet opgegeven"}`,

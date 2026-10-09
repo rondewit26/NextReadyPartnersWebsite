@@ -8,7 +8,7 @@ import {
   type FetchLike,
 } from "./notion";
 import { summarize as defaultSummarize, type Summarizer } from "./summarize";
-import { formatNl, minutesBetween } from "./time";
+import { formatNl, minutesBetween, weekdayNl } from "./time";
 import { transcribe as defaultTranscribe } from "./transcribe";
 import { JOB_TTL_SECONDS, MAX_ATTEMPTS, STALE_PROCESSING_MINUTES, type Env, type Job } from "./types";
 
@@ -124,6 +124,7 @@ export async function processJob(env: Env, job: Job, deps: ProcessDeps = {}): Pr
       meta: job.meta,
       options,
       datumLabel,
+      weekday: weekdayNl(new Date(job.meta.datum), env.TIMEZONE),
     });
 
     const props = finalProperties(job.meta, summary, options);

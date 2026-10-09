@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { NotionClient, block, finalProperties, initialProperties, summaryBlocks, transcriptBlocks, transcriptSectionBlocks } from "../src/notion";
 import { summarize } from "../src/summarize";
-import { formatNl, toZonedIso } from "../src/time";
+import { formatNl, toZonedIso, weekdayNl } from "../src/time";
 import type { CallSummary, IngestMeta } from "../src/types";
 
 const token = process.env.NOTION_TOKEN;
@@ -62,6 +62,7 @@ async function main() {
       meta,
       options,
       datumLabel,
+      weekday: weekdayNl(now, timeZone),
     });
     console.log(JSON.stringify(summary, null, 2));
   }

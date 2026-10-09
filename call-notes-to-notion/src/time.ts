@@ -53,3 +53,8 @@ export function formatNl(date: Date, timeZone: string): string {
 export function minutesBetween(a: string, b: Date): number {
   return (b.getTime() - new Date(a).getTime()) / 60000;
 }
+
+/** `vrijdag` (Nederlandse weekdag in de opgegeven tijdzone). */
+export function weekdayNl(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("nl-NL", { timeZone, weekday: "long" }).format(date);
+}
