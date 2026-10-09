@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
-    "zod": "^3.25.0"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261006.1",

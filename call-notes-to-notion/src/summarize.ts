@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+// Vereist zod 4: de SDK-helper bouwt zijn JSON-schema met het v4-formaat. Met zod 3.x crasht
+// zodOutputFormat() ("Cannot read properties of undefined (reading 'def')").
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { CallSummary, IngestMeta } from "./types";
@@ -101,17 +103,20 @@ export function buildUserPrompt(args: Omit<SummarizeArgs, "apiKey" | "model">): 
   return lines.join("\n");
 }
 
-function enumWithEmpty(options: string[]) {
-  const values = ["", ...options.filter((o) => o.trim())];
-  return z.enum(values as [string, ...string[]]);
-}
-
+/**
+ * Categorie en project zijn bewust gewone strings met een beschrijving, geen enum:
+ * de SDK dwingt string-enums niet af, en een afwijkende waarde mag de samenvatting
+ * niet laten mislukken. `finalProperties` in notion.ts zet alleen waarden door die
+ * echt als select-optie in Notion bestaan.
+ */
 export function summarySchema(options: SelectOptions) {
+  const choose = (opts: string[]) =>
+    `Kies exact één van: ${opts.map((o) => `"${o}"`).join(", ") || "(geen opties)"}. Lege string als niets duidelijk past.`;
   return z.object({
     titel: z.string(),
     contact: z.string(),
-    categorie: enumWithEmpty(options.categorie),
-    project: enumWithEmpty(options.project),
+    categorie: z.string().describe(choose(options.categorie)),
+    project: z.string().describe(choose(options.project)),
     samenvatting: z.string(),
     kernpunten: z.array(z.string()),
     besluiten_en_afspraken: z.array(z.string()),

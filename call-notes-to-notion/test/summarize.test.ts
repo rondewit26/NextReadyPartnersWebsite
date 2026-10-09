@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { buildSystemPrompt, buildUserPrompt, summarySchema } from "../src/summarize";
 
 const options = { categorie: ["Meeting", "Klanten"], project: ["Acquisitie briefing"] };
@@ -45,11 +46,25 @@ describe("summarySchema", () => {
     vervolg: "",
   };
 
-  it("accepteert geldige opties en lege string", () => {
-    expect(schema.safeParse(valid).success).toBe(true);
+  it("kan door de echte SDK-helper tot JSON-schema worden omgezet (regressie: zod v3 vs v4)", () => {
+    const format = zodOutputFormat(schema) as any;
+    expect(format.type).toBe("json_schema");
+    expect(format.schema.type).toBe("object");
+    expect(format.schema.additionalProperties).toBe(false);
+    expect(Object.keys(format.schema.properties)).toContain("actiepunten");
+    // De opties staan in de veldbeschrijving zodat Claude ze kan lezen.
+    expect(format.schema.properties.categorie.description).toContain('"Klanten"');
+    expect(format.schema.properties.project.description).toContain('"Acquisitie briefing"');
   });
 
-  it("weigert een categorie die niet in Notion bestaat", () => {
-    expect(schema.safeParse({ ...valid, categorie: "Onzin" }).success).toBe(false);
+  it("parseert uitvoer en laat een onbekende categorie door; filtering gebeurt in finalProperties", () => {
+    const format = zodOutputFormat(schema) as any;
+    expect(format.parse(JSON.stringify(valid)).categorie).toBe("Klanten");
+    expect(format.parse(JSON.stringify({ ...valid, categorie: "Onzin" })).categorie).toBe("Onzin");
+  });
+
+  it("weigert uitvoer waarin een verplicht veld ontbreekt", () => {
+    const { vervolg: _omit, ...incomplete } = valid;
+    expect(() => (zodOutputFormat(schema) as any).parse(JSON.stringify(incomplete))).toThrow();
   });
 });

@@ -81,6 +81,11 @@ describe("properties", () => {
     expect(props.Project).toEqual({ select: { name: "Acquisitie briefing" } });
   });
 
+  it("finalProperties negeert een categorie die niet bestaat", () => {
+    const props = finalProperties({ datum: meta.datum }, { ...summary, categorie: "Onzin" }, options) as any;
+    expect(props.Categorie).toBeUndefined();
+  });
+
   it("finalProperties negeert een project dat niet bestaat", () => {
     const props = finalProperties({ datum: meta.datum }, { ...summary, project: "Onzin" }, options) as any;
     expect(props.Project).toBeUndefined();
