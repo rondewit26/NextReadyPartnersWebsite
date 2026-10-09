@@ -99,7 +99,8 @@ export async function processJob(env: Env, job: Job, deps: ProcessDeps = {}): Pr
         audio,
         filename: job.filename,
         contentType: job.contentType,
-        prompt: `Nederlands telefoongesprek van Ron de Wit${job.meta.contact ? ` met ${job.meta.contact}` : ""}.`,
+        prompt: env.TRANSCRIBE_PROMPT?.trim() || undefined,
+        chunking: env.TRANSCRIBE_CHUNKING === "off" ? "off" : "auto",
         fetchImpl: deps.fetchImpl,
       });
       // Transcript is binnen: audio hoeft nergens meer te bestaan.

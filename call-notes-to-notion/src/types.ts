@@ -10,6 +10,10 @@ export interface Env {
   TIMEZONE: string;
   TRANSCRIBE_LANGUAGE: string;
   TRANSCRIBE_MODEL: string;
+  /** Optioneel. Standaard leeg: gpt-4o-transcribe kan een prompt als transcript teruggeven. */
+  TRANSCRIBE_PROMPT?: string;
+  /** Optioneel: "off" zet chunking_strategy uit. Standaard "auto". */
+  TRANSCRIBE_CHUNKING?: string;
   CLAUDE_MODEL: string;
 }
 

@@ -54,6 +54,7 @@ describe("processPendingJobs", () => {
     expect(form.get("model")).toBe("gpt-4o-transcribe");
     expect(form.get("language")).toBe("nl");
     expect(form.get("chunking_strategy")).toBe("auto");
+    expect(form.get("prompt")).toBeNull(); // geen prompt: die lekte eerder als transcript
     expect((form.get("file") as File).name).toBe("gesprek-job-1.m4a");
     expect(openai.headers.Authorization).toBe("Bearer sk-test");
 

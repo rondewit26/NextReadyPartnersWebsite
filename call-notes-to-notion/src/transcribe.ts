@@ -17,8 +17,13 @@ export interface TranscribeArgs {
   audio: ArrayBuffer;
   filename: string;
   contentType: string;
-  /** Context die de spelling van namen helpt (bv. "Telefoongesprek met Peter Kraan van Improvery"). */
+  /**
+   * Optionele hint voor het model. Standaard NIET gebruiken: gpt-4o-transcribe kan de prompt
+   * letterlijk als transcript teruggeven (gebleken bij de eerste echte opname).
+   */
   prompt?: string;
+  /** "auto" laat de server lange opnames zelf knippen; "off" stuurt geen chunking_strategy mee. */
+  chunking?: "auto" | "off";
   fetchImpl?: FetchLike;
 }
 
@@ -34,7 +39,7 @@ export async function transcribe(args: TranscribeArgs): Promise<string> {
   form.append("model", args.model);
   form.append("language", args.language);
   form.append("response_format", "json");
-  form.append("chunking_strategy", "auto");
+  if ((args.chunking ?? "auto") === "auto") form.append("chunking_strategy", "auto");
   if (args.prompt) form.append("prompt", args.prompt);
 
   const res = await fetchImpl("https://api.openai.com/v1/audio/transcriptions", {
