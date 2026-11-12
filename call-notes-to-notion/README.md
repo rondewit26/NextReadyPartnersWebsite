@@ -131,8 +131,9 @@ m4a/mp4-opname automatisch zodra hij te groot of te lang is:
 in een gewone mono-opname. Zie je eerst wat er met een opname zou gebeuren, zonder iets
 te uploaden, met: `npx tsx scripts/split-check.ts "/pad/naar/opname.m4a"`.
 
-**Heel grote bestanden (honderden MB).** Een m4a van meer dan 60 MB is vrijwel altijd lossless of met een hoge kwaliteit opgenomen,
-en spraak heeft dat niet nodig. Een uur lossless is ongeveer 300 tot 600 MB. Cloudflare weigert uploads boven 100 MB al voordat de
+**Heel grote bestanden (boven 80 MB).** Een gewone opname in 130 kbps stereo is ongeveer 61 MB per uur, dus een opname van meer dan
+anderhalf uur komt boven de limiet, net als alles wat lossless is opgenomen: een uur lossless is ongeveer 300 tot 600 MB. Spraak
+heeft die kwaliteit niet nodig. Cloudflare weigert uploads boven 100 MB al voordat de
 Worker ze ziet, dus daar kan geen code iets aan doen. Zet zo'n bestand eerst om naar een klein m4a-bestand:
 
 ```bash
