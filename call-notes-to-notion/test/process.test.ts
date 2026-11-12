@@ -4,6 +4,7 @@ import { canFallBack, processPendingJobs, shouldProcess } from "../src/process";
 import { TranscribeError } from "../src/transcribe";
 import type { CallSummary, Job } from "../src/types";
 import { MemoryKV, ingestRequest, makeEnv, mockFetch } from "./helpers";
+import { buildSyntheticMp4 } from "./mp4-helpers";
 
 const now = () => new Date("2026-10-08T12:03:00Z");
 
@@ -206,8 +207,8 @@ describe("shouldProcess", () => {
     id: "x", status: "processing", createdAt: "", attempts: 1, pageId: "p", pageUrl: "", placeholderBlockId: "b",
     contentType: "audio/mp4", filename: "a.m4a", audioBytes: 1, meta: { datum: "" },
   };
-  it("pakt vastgelopen 'processing'-jobs na 20 minuten opnieuw op, eerder niet", () => {
-    const t = new Date("2026-10-08T12:30:00Z");
+  it("pakt vastgelopen 'processing'-jobs na 30 minuten opnieuw op, eerder niet", () => {
+    const t = new Date("2026-10-08T12:45:00Z");
     expect(shouldProcess({ ...base, startedAt: "2026-10-08T12:25:00Z" }, t)).toBe(false);
     expect(shouldProcess({ ...base, startedAt: "2026-10-08T12:00:00Z" }, t)).toBe(true);
     expect(shouldProcess({ ...base, status: "done" }, t)).toBe(false);
@@ -255,5 +256,94 @@ describe("transcriptie-vangnet", () => {
     expect(canFallBack(new TranscribeError("x", 422), "whisper-1", "gpt-4o-transcribe")).toBe(false);
     expect(canFallBack(new TranscribeError("x", 500), "gpt-4o-transcribe", "gpt-4o-transcribe")).toBe(false);
     expect(canFallBack(new Error("x"), "whisper-1", "gpt-4o-transcribe")).toBe(false);
+  });
+});
+
+describe("lange opnames in meerdere delen", () => {
+  const limits = { maxSingleBytes: 150_000, parseThresholdBytes: 10_000, maxPartBytes: 40_000, maxPartSeconds: 1e9 };
+  const bytes = buildSyntheticMp4({ samples: 1500, sampleSize: () => 100 }).bytes; // 4 delen
+
+  async function ingestLong(kv: MemoryKV, fetchImpl: typeof fetch) {
+    const res = await handleIngest(ingestRequest({ token: "geheim-token", audio: bytes.buffer as ArrayBuffer }), makeEnv(kv), {
+      fetchImpl, now, newId: () => "lang", audioLimits: limits,
+    });
+    expect(res.status).toBe(202);
+  }
+
+  it("transcribeert elk deel in volgorde, wist elk deel meteen en zet de delen aan elkaar", async () => {
+    const kv = new MemoryKV();
+    const { fetchImpl, calls } = mockFetch();
+    await ingestLong(kv, fetchImpl);
+    const seen: { model: string; filename: string; chunking?: string }[] = [];
+    const keysDuring: number[] = [];
+    const transcribe = async (a: any) => {
+      seen.push({ model: a.model, filename: a.filename, chunking: a.chunking });
+      keysDuring.push([...kv.store.keys()].filter((k) => k.startsWith("audio:")).length);
+      return `Deel ${seen.length}.`;
+    };
+    const result = await processPendingJobs(makeEnv(kv), { fetchImpl, now, log: () => {}, summarize: async () => summary, transcribe });
+    expect(result.processed).toEqual(["lang"]);
+    expect(seen.map((s) => s.filename)).toEqual([
+      "gesprek-lang-deel1.m4a", "gesprek-lang-deel2.m4a", "gesprek-lang-deel3.m4a", "gesprek-lang-deel4.m4a",
+    ]);
+    expect(seen.every((s) => s.model === "gpt-4o-transcribe" && s.chunking === "off")).toBe(true);
+    expect(keysDuring).toEqual([4, 3, 2, 1]); // elk deel wordt gewist zodra het klaar is
+    expect([...kv.store.keys()].some((k) => k.startsWith("audio:"))).toBe(false);
+
+    // Het transcript op de pagina: één alinea per deel, in de juiste volgorde.
+    const transcriptCall = calls.find((c) => c.method === "PATCH" && /\/children$/.test(c.url) && c.body.children?.[0]?.type === "paragraph")!;
+    expect((transcriptCall.body.children as any[]).map((b) => b.paragraph.rich_text[0].text.content)).toEqual(["Deel 1.", "Deel 2.", "Deel 3.", "Deel 4."]);
+    const job = JSON.parse(await kv.get("job:lang")) as Job;
+    expect(job.status).toBe("done");
+    expect(job.partials).toBeUndefined();
+  });
+
+  it("hervat na een fout bij het volgende deel in plaats van opnieuw te beginnen", async () => {
+    const kv = new MemoryKV();
+    const { fetchImpl } = mockFetch();
+    await ingestLong(kv, fetchImpl);
+    const env = makeEnv(kv);
+    let call = 0;
+    const calledFor: string[] = [];
+    const transcribe = async (a: any) => {
+      calledFor.push(a.filename);
+      call++;
+      if (call === 2) throw new TranscribeError("sleutel afgewezen", 401);
+      return `Tekst ${a.filename}.`;
+    };
+    const deps = { fetchImpl, now, log: () => {}, summarize: async () => summary, transcribe };
+
+    const first = await processPendingJobs(env, deps);
+    expect(first.failed).toEqual(["lang"]);
+    let job = JSON.parse(await kv.get("job:lang")) as Job;
+    expect(job.status).toBe("failed");
+    expect(job.error).toContain("Deel 2 van 4");
+    expect(job.partials).toHaveLength(1);
+    expect(kv.store.has("audio:lang:0")).toBe(false); // klaar en gewist
+    expect(kv.store.has("audio:lang:1")).toBe(true); // nog nodig
+
+    const second = await processPendingJobs(env, deps);
+    expect(second.processed).toEqual(["lang"]);
+    expect(calledFor).toEqual([
+      "gesprek-lang-deel1.m4a", "gesprek-lang-deel2.m4a", // eerste ronde: deel 2 faalt
+      "gesprek-lang-deel2.m4a", "gesprek-lang-deel3.m4a", "gesprek-lang-deel4.m4a", // tweede ronde: deel 1 niet opnieuw
+    ]);
+    job = JSON.parse(await kv.get("job:lang")) as Job;
+    expect(job.status).toBe("done");
+  });
+
+  it("gebruikt het vangnet-model alleen voor het deel dat faalt", async () => {
+    const kv = new MemoryKV();
+    const { fetchImpl } = mockFetch();
+    await ingestLong(kv, fetchImpl);
+    const models: string[] = [];
+    const transcribe = async (a: any) => {
+      models.push(a.model);
+      if (a.model === "gpt-4o-transcribe" && a.filename.endsWith("deel3.m4a")) throw new TranscribeError("te lang", 400);
+      return "Tekst.";
+    };
+    const result = await processPendingJobs(makeEnv(kv), { fetchImpl, now, log: () => {}, summarize: async () => summary, transcribe });
+    expect(result.processed).toEqual(["lang"]);
+    expect(models).toEqual(["gpt-4o-transcribe", "gpt-4o-transcribe", "gpt-4o-transcribe", "whisper-1", "gpt-4o-transcribe"]);
   });
 });

@@ -47,6 +47,10 @@ export interface Job {
   contentType: string;
   filename: string;
   audioBytes: number;
+  /** Aantal delen waarin de opname is opgeslagen (1 = ongesplitst). */
+  parts?: number;
+  /** Transcripten van de delen die al klaar zijn; een nieuwe poging hervat daarna. */
+  partials?: string[];
   /** Transcript zodra bekend. Audio wordt op dat moment direct gewist. */
   transcript?: string;
   /** Of het transcript al op de Notion-pagina staat (transcriptie geslaagd). */
@@ -77,7 +81,16 @@ export interface CallSummary {
 export const JOB_TTL_SECONDS = 60 * 60 * 48;
 /** Audio leeft hooguit zo lang in KV; normaal wordt hij al na enkele minuten (na transcriptie) gewist. */
 export const AUDIO_TTL_SECONDS = 60 * 60;
+/** Grootste bestand dat als geheel naar OpenAI mag (hun limiet is 25 MB, KV 25 MiB). */
 export const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
+/** Grootste upload. De Worker houdt het bestand in het geheugen (128 MB) en maakt er delen van. */
+export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
+/** Onder deze grootte wordt een MP4 niet ingelezen om te splitsen. */
+export const PARSE_THRESHOLD_BYTES = 5 * 1024 * 1024;
+/** Sampledata per deel; met container-overhead blijft elk deel ruim onder 25 MB. */
+export const PART_MAX_BYTES = 18 * 1024 * 1024;
+/** Duur per deel. Voorzorg: gpt-4o-transcribe heeft volgens meldingen een duurlimiet van rond de 23 minuten. */
+export const PART_MAX_SECONDS = 20 * 60;
 export const MAX_ATTEMPTS = 3;
 /** Na zoveel minuten "processing" zonder resultaat wordt een job opnieuw opgepakt. */
-export const STALE_PROCESSING_MINUTES = 20;
+export const STALE_PROCESSING_MINUTES = 30;

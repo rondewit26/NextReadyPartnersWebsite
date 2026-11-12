@@ -39,7 +39,9 @@ export default {
     return json({ ok: false, error: "Niet gevonden" }, 404);
   },
 
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(processPendingJobs(env));
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    // Wacht op de verwerking in plaats van ctx.waitUntil: na het teruggeven van de handler krijgt
+    // waitUntil-werk maar een korte nalooptijd, en een lang gesprek duurt meerdere minuten.
+    await processPendingJobs(env);
   },
 } satisfies ExportedHandler<Env>;

@@ -1,8 +1,11 @@
 import { NotionClient, block, initialProperties, type FetchLike } from "./notion";
 import { formatNl, toZonedIso } from "./time";
-import { AUDIO_TTL_SECONDS, JOB_TTL_SECONDS, MAX_AUDIO_BYTES, type Env, type IngestMeta, type Job } from "./types";
+import { AudioError, audioKey, planAudio, type AudioLimits } from "./audio";
+import { AUDIO_TTL_SECONDS, JOB_TTL_SECONDS, MAX_UPLOAD_BYTES, type Env, type IngestMeta, type Job } from "./types";
 
 export interface IngestDeps {
+  /** Alleen voor tests: kleinere limieten om splitsen met kleine bestanden te kunnen testen. */
+  audioLimits?: Partial<AudioLimits>;
   fetchImpl?: FetchLike;
   now?: () => Date;
   newId?: () => string;
@@ -170,35 +173,62 @@ export async function handleIngest(request: Request, env: Env, deps: IngestDeps 
   const url = new URL(request.url);
   const now = (deps.now ?? (() => new Date()))();
   const contentType = request.headers.get("Content-Type") || "audio/mp4";
-  const declared = Number(request.headers.get("Content-Length") ?? "0");
-  if (declared > MAX_AUDIO_BYTES) {
-    return json(
+  const tooLarge = (bytes: number) =>
+    json(
       {
         ok: false,
-        error: `Audio is ${(declared / 1048576).toFixed(1)} MB; maximum is ${MAX_AUDIO_BYTES / 1048576} MB. Knip de opname of comprimeer hem (Shortcuts: "Codeer media" → alleen audio).`,
+        error: `Opname is ${(bytes / 1048576).toFixed(1)} MB; het maximum is ${MAX_UPLOAD_BYTES / 1048576} MB (ongeveer twee uur in de standaardkwaliteit van Voice Memos). Comprimeer de opname of neem hem in twee delen op.`,
       },
       413,
     );
-  }
+  const declared = Number(request.headers.get("Content-Length") ?? "0");
+  if (declared > MAX_UPLOAD_BYTES) return tooLarge(declared);
 
   const audio = await request.arrayBuffer();
   if (audio.byteLength === 0) return json({ ok: false, error: "Geen audio ontvangen (lege body)" }, 400);
-  if (audio.byteLength > MAX_AUDIO_BYTES) return json({ ok: false, error: "Audio groter dan 24 MB" }, 413);
+  if (audio.byteLength > MAX_UPLOAD_BYTES) return tooLarge(audio.byteLength);
+
+  // Bepaal vóór alles of en hoe de opname moet worden gesplitst, zodat een onbruikbaar bestand
+  // geen lege Notion-pagina achterlaat.
+  let plan;
+  try {
+    plan = planAudio(new Uint8Array(audio), deps.audioLimits);
+  } catch (err) {
+    if (err instanceof AudioError) return json({ ok: false, error: err.message }, err.status);
+    return json({ ok: false, error: `Opname verwerken mislukt: ${(err as Error).message}` }, 500);
+  }
 
   const meta = metaFromQuery(url, now, env.TIMEZONE);
   const filename = clean(url.searchParams.get("filename"), 200);
-  const ext = extensionFor(contentType, filename);
+  const ext = plan.mode === "split" ? "m4a" : extensionFor(contentType, filename);
   const datumLabel = formatNl(now, env.TIMEZONE);
+  const id = (deps.newId ?? (() => crypto.randomUUID()))();
+
+  // Audio is tijdelijk: na transcriptie wordt elk deel direct gewist, en na een uur sowieso.
+  const storedKeys: string[] = [];
+  const cleanup = async () => {
+    await Promise.allSettled(storedKeys.map((key) => env.JOBS.delete(key)));
+  };
+  try {
+    for (let i = 0; i < plan.parts; i++) {
+      const key = audioKey(id, i, plan.parts);
+      await env.JOBS.put(key, plan.mode === "split" ? plan.part(i) : audio, { expirationTtl: AUDIO_TTL_SECONDS });
+      storedKeys.push(key);
+    }
+  } catch (err) {
+    await cleanup();
+    return json({ ok: false, error: `Audio opslaan mislukt: ${(err as Error).message}` }, 500);
+  }
 
   let prepared;
   try {
     prepared = await preparePage(env, meta, datumLabel, deps.fetchImpl);
   } catch (err) {
+    await cleanup();
     return json({ ok: false, error: `Notion: ${(err as Error).message}` }, 502);
   }
   const { page, placeholderBlockId, warnings } = prepared;
 
-  const id = (deps.newId ?? (() => crypto.randomUUID()))();
   const job: Job = {
     id,
     status: "pending",
@@ -207,14 +237,12 @@ export async function handleIngest(request: Request, env: Env, deps: IngestDeps 
     pageId: page.id,
     pageUrl: page.url,
     placeholderBlockId,
-    contentType,
+    contentType: plan.mode === "split" ? "audio/mp4" : contentType,
     filename: `gesprek-${id.slice(0, 8)}.${ext}`,
     audioBytes: audio.byteLength,
+    parts: plan.parts,
     meta,
   };
-
-  // Audio is tijdelijk: na transcriptie wordt hij direct gewist, en na een uur sowieso.
-  await env.JOBS.put(`audio:${id}`, audio, { expirationTtl: AUDIO_TTL_SECONDS });
   await env.JOBS.put(`job:${id}`, JSON.stringify(job), { expirationTtl: JOB_TTL_SECONDS });
 
   return json(
@@ -222,7 +250,11 @@ export async function handleIngest(request: Request, env: Env, deps: IngestDeps 
       ok: true,
       jobId: id,
       url: page.url,
-      bericht: "Opname ontvangen. De Notion-pagina staat klaar en wordt binnen enkele minuten gevuld.",
+      bericht:
+        plan.parts > 1
+          ? `Opname ontvangen en in ${plan.parts} delen opgesplitst. De Notion-pagina staat klaar en wordt binnen enkele minuten gevuld.`
+          : "Opname ontvangen. De Notion-pagina staat klaar en wordt binnen enkele minuten gevuld.",
+      delen: plan.parts,
       warnings,
     },
     202,

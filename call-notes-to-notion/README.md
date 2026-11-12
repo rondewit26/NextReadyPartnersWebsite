@@ -92,7 +92,7 @@ Marketing het interne profiel; anders kiest Claude zelf. Aanpassen: `src/summari
 
 - **iOS laat geen apps meeluisteren.** Opnemen gaat via Apple's eigen knop in de Telefoon-app (iOS 18.1+). Beide partijen horen een melding. Er is geen automatische trigger "gesprek beëindigd"; het delen vanuit Notities is de ene handmatige tik.
 - **Apple's gesprekstranscriptie werkt niet in het Nederlands**, daarom gaat de audio standaard naar OpenAI (zie de tabel hierboven voor wat er precies wordt bewaard). Alternatief zonder audio-upload: de on-device variant in `docs/SHORTCUT.md`.
-- **Max. 24 MB per opname** (OpenAI-limiet is 25 MB). Apple's opnames zijn compact; een gesprek van ruim een uur past meestal. Te groot? Het Shortcut kan de audio eerst hercoderen met "Codeer media" (alleen audio).
+- **Max. 60 MB per upload.** Lange m4a-opnames worden automatisch gesplitst (zie "Lange gesprekken"). Andere formaten dan m4a/mp4 (mp3, wav) kunnen als geheel tot 24 MB, want OpenAI accepteert maximaal 25 MB per verzoek.
 - **Notion's eigen "AI meeting notes"-blok** kan niet via de API worden aangemaakt. De pagina krijgt gewone blokken met dezelfde informatie. Je kunt in Notion wel nog Notion AI over het transcript laten lopen.
 - **Cloudflare gratis tier** geeft 10 ms CPU per aanroep. Netwerk-wachttijd telt niet mee, dus dit past normaal. Zie je in `wrangler tail` toch "CPU time limit exceeded", dan is Workers Paid (5 dollar per maand, 30 s CPU) de oplossing.
 
@@ -106,6 +106,37 @@ Marketing het interne profiel; anders kiest Claude zelf. Aanpassen: `src/summari
 
 Grofweg een kwartje tot 30 cent per half uur. Goedkoper kan door `CLAUDE_MODEL` op `claude-sonnet-5-5`
 te zetten of `TRANSCRIBE_MODEL` op `gpt-4o-mini-transcribe`; beide via `wrangler.toml`.
+
+## Lange gesprekken
+
+OpenAI neemt maximaal 25 MB per transcriptie aan, en gpt-4o-transcribe heeft volgens meldingen ook een
+duurlimiet van rond de 23 minuten. Een uur Voice Memos is ongeveer 30 MB. Daarom splitst de Worker een
+m4a/mp4-opname automatisch zodra hij te groot of te lang is:
+
+1. Het bestand wordt **niet gedecodeerd of opnieuw gecodeerd**. De gecomprimeerde audiosamples worden
+   ongewijzigd in nieuwe, zelfstandige m4a-bestanden gezet, elk hooguit 18 MB en 20 minuten. De audio blijft
+   bit voor bit gelijk, dus er gaat geen kwaliteit verloren.
+2. Elk deel wordt apart getranscribeerd en daarna direct gewist. De transcripten worden in volgorde aan elkaar gezet.
+3. Een deel dat klaar is, wordt bewaard. Faalt een volgend deel, dan hervat een nieuwe poging daar en begint niet opnieuw.
+4. Het vangnet met `whisper-1` geldt per deel.
+
+| Opname | Wat er gebeurt |
+|---|---|
+| m4a/mp4 tot ongeveer 18 MB en 20 minuten | Ongewijzigd, één transcriptie |
+| m4a/mp4 tot 60 MB | Gesplitst in delen |
+| mp3, wav en andere formaten tot 24 MB | Ongewijzigd, één transcriptie |
+| Alles boven 60 MB, of niet-m4a boven 24 MB | Geweigerd met een duidelijke melding, vóór er een Notion-pagina ontstaat |
+
+60 MB is ongeveer twee uur in de standaardkwaliteit van Voice Memos. Zie je eerst wat er met een opname zou gebeuren, zonder iets
+te uploaden, met: `npx tsx scripts/split-check.ts "/pad/naar/opname.m4a"`.
+
+Aandachtspunten:
+- **Rekentijd.** Splitsen kost ongeveer 30 tot 60 ms rekentijd voor een bestand van 30 MB (gemeten in Node). Het gratis Cloudflare-plan staat
+  maar 10 ms rekentijd per verzoek toe. Krijg je bij een grote upload de melding "Worker exceeded CPU time limit", dan is Workers Paid
+  (5 dollar per maand, 30 seconden) de oplossing. Kleine opnames raken dit niet.
+- **Op de grens tussen twee delen** kan één woord worden afgekapt. Gesneden wordt op een tijdstip en niet op een pauze, omdat dat zonder te decoderen kan.
+- **Alleen gewone (niet-gefragmenteerde) m4a/mp4.** Een gefragmenteerd bestand boven 24 MB wordt geweigerd.
+- **Geheugen.** De Worker heeft 128 MB. Een upload van 60 MB past, maar boven die grens niet; daarom de limiet.
 
 ## Kwaliteit van de transcriptie
 

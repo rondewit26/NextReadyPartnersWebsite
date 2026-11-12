@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { extensionFor, handleIngest, handleIngestText } from "../src/ingest";
 import type { Job } from "../src/types";
+import { parseMp4Audio } from "../src/mp4";
 import { MemoryKV, ingestRequest, makeEnv, mockFetch } from "./helpers";
+import { buildSyntheticMp4 } from "./mp4-helpers";
 
 const now = () => new Date("2026-10-08T12:03:00Z");
 
@@ -22,15 +24,26 @@ describe("handleIngest", () => {
     expect(res.status).toBe(400);
   });
 
-  it("weigert te grote uploads op basis van Content-Length", async () => {
+  it("weigert uploads boven 60 MB op basis van Content-Length, zonder de body te lezen", async () => {
+    const { fetchImpl, calls } = mockFetch();
     const res = await handleIngest(
-      ingestRequest({ token: "geheim-token", contentLength: 30 * 1024 * 1024 }),
+      ingestRequest({ token: "geheim-token", contentLength: 70 * 1024 * 1024 }),
       makeEnv(new MemoryKV()),
-      { fetchImpl: mockFetch().fetchImpl },
+      { fetchImpl },
     );
     expect(res.status).toBe(413);
     const body = (await res.json()) as any;
-    expect(body.error).toContain("24 MB");
+    expect(body.error).toContain("60 MB");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("neemt een opname van meer dan 30 MB aan (voorheen te groot) zolang hij onder 60 MB blijft", async () => {
+    const res = await handleIngest(
+      ingestRequest({ token: "geheim-token", contentLength: 31 * 1024 * 1024, audio: new Uint8Array(4096).buffer as ArrayBuffer }),
+      makeEnv(new MemoryKV()),
+      { fetchImpl: mockFetch().fetchImpl, now },
+    );
+    expect(res.status).toBe(202);
   });
 
   it("maakt een placeholderpagina, slaat job + audio op en antwoordt 202", async () => {
@@ -98,6 +111,66 @@ describe("handleIngest", () => {
       { fetchImpl: mockFetch({ fail: /POST .*\/pages$/ }).fetchImpl, now },
     );
     expect(res.status).toBe(502);
+    expect(kv.store.size).toBe(0);
+  });
+});
+
+const splitLimits = { maxSingleBytes: 150_000, parseThresholdBytes: 10_000, maxPartBytes: 40_000, maxPartSeconds: 1e9 };
+
+describe("handleIngest met lange opnames", () => {
+  const long = () => buildSyntheticMp4({ samples: 1500, sampleSize: () => 100 }).bytes; // 150 kB -> 4 delen
+
+  it("splitst de opname, bewaart elk deel apart met een korte TTL en noteert het aantal delen in de job", async () => {
+    const kv = new MemoryKV();
+    const bytes = long();
+    const res = await handleIngest(
+      ingestRequest({ token: "geheim-token", audio: bytes.buffer as ArrayBuffer }),
+      makeEnv(kv),
+      { fetchImpl: mockFetch().fetchImpl, now, newId: () => "lang-1", audioLimits: splitLimits },
+    );
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as any;
+    expect(body.delen).toBe(4);
+    expect(body.bericht).toContain("4 delen");
+
+    const job = JSON.parse(await kv.get("job:lang-1")) as Job;
+    expect(job.parts).toBe(4);
+    expect(job.contentType).toBe("audio/mp4");
+    expect(job.filename).toBe("gesprek-lang-1.m4a");
+    expect(job.audioBytes).toBe(bytes.length);
+
+    let samples = 0;
+    for (let i = 0; i < 4; i++) {
+      const key = `audio:lang-1:${i}`;
+      expect(kv.ttl.get(key)).toBe(3600);
+      samples += parseMp4Audio(new Uint8Array(await kv.get(key, "arrayBuffer"))).sampleSizes.length;
+    }
+    expect(samples).toBe(1500);
+    expect(kv.store.has("audio:lang-1")).toBe(false);
+  });
+
+  it("ruimt de opgeslagen delen op als Notion niet bereikbaar is", async () => {
+    const kv = new MemoryKV();
+    const res = await handleIngest(
+      ingestRequest({ token: "geheim-token", audio: long().buffer as ArrayBuffer }),
+      makeEnv(kv),
+      { fetchImpl: mockFetch({ fail: /POST .*\/pages$/ }).fetchImpl, now, newId: () => "lang-2", audioLimits: splitLimits },
+    );
+    expect(res.status).toBe(502);
+    expect(kv.store.size).toBe(0);
+  });
+
+  it("weigert een niet-splitsbaar bestand boven de limiet vóór er iets in Notion wordt aangemaakt", async () => {
+    const kv = new MemoryKV();
+    const { fetchImpl, calls } = mockFetch();
+    const res = await handleIngest(
+      ingestRequest({ token: "geheim-token", audio: new Uint8Array(200_000).fill(9).buffer as ArrayBuffer }),
+      makeEnv(kv),
+      { fetchImpl, now, audioLimits: splitLimits },
+    );
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as any).error).toContain("alleen m4a/mp4");
+    expect(calls).toHaveLength(0);
     expect(kv.store.size).toBe(0);
   });
 });

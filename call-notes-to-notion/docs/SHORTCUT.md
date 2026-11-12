@@ -28,7 +28,8 @@ Open **Shortcuts** en tik op **+**.
 Gebruik: open Notes, tik op de opname, deel de opname zelf (niet de hele notitie) en kies **Gesprek naar Notion**.
 Lukt delen vanuit Notes niet, kies dan **Save to Files** en deel het bestand vanuit **Files**.
 
-Je ziet `ok: true` en een `url`. Binnen enkele minuten staat de meeting note in Notion.
+Je ziet `ok: true` en een `url`. Binnen enkele minuten staat de meeting note in Notion. Lange opnames (m4a) worden automatisch gesplitst;
+het antwoord toont dan hoeveel delen (`delen`). Een gesprek van een uur duurt in totaal enkele minuten langer.
 
 Het token in de header is geheim. Deel dit Shortcut dus nooit via een link of iCloud-deling, en maak
 een token onleesbaar in screenshots (zie "Token wisselen" hieronder).
@@ -86,5 +87,5 @@ en teken meerdere strepen over het token. Zoom in om te controleren dat er geen 
 | `Niet geautoriseerd` | Het token in het Shortcut is niet hetzelfde als `INGEST_TOKEN` in de Worker, of er staat geen spatie na `Bearer` |
 | Shortcut staat niet in het Share-menu | **Show in Share Sheet** staat uit; bovenaan moet "from Share Sheet" staan |
 | Fout van OpenAI over het bestand | Je hebt de notitie gedeeld in plaats van de opname zelf |
-| `413` | Opname groter dan 24 MB; knip hem of deel een kortere opname |
+| `413` | Opname groter dan 60 MB (m4a) of 24 MB (andere formaten); comprimeer of deel een kortere opname |
 | Pagina blijft op ⏳ | Wacht tot vier minuten of start `POST /process`; zie `docs/SETUP.md` |

@@ -11,8 +11,14 @@ export class MemoryKV {
     if (type === "arrayBuffer") return typeof v === "string" ? new TextEncoder().encode(v).buffer : v;
     return typeof v === "string" ? v : new TextDecoder().decode(v);
   }
-  async put(key: string, value: string | ArrayBuffer, opts?: { expirationTtl?: number }): Promise<void> {
-    this.store.set(key, value);
+  async put(key: string, value: string | ArrayBuffer | ArrayBufferView, opts?: { expirationTtl?: number }): Promise<void> {
+    const stored =
+      typeof value === "string"
+        ? value
+        : ArrayBuffer.isView(value)
+          ? (value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer)
+          : value;
+    this.store.set(key, stored);
     this.ttl.set(key, opts?.expirationTtl);
   }
   async delete(key: string): Promise<void> {

@@ -101,7 +101,10 @@ curl -X POST "http://localhost:8787/__scheduled?cron=*/2+*+*+*+*"   # cron handm
 |---|---|
 | `401 Niet geautoriseerd` | Token in Shortcut ≠ `INGEST_TOKEN`. Header moet `Authorization: Bearer <token>` zijn. |
 | `502 Notion onbereikbaar: ... 404` | Integratie niet gekoppeld aan de pagina (stap 1.4) of verkeerd data source-id. |
-| `413` | Opname > 24 MB. Hercodeer in het Shortcut of knip. |
+| `413` met "60 MB" | Opname groter dan 60 MB. Comprimeer of neem hem in twee delen op. |
+| `413` met "alleen m4a/mp4" | Een groot bestand in een ander formaat dan m4a/mp4 (mp3, wav). Die kunnen niet worden gesplitst en mogen maximaal 24 MB zijn. |
+| Fout "Worker exceeded CPU time limit" bij een grote upload | Het gratis plan staat maar 10 ms rekentijd toe. Splitsen van een groot bestand kost meer. Workers Paid (5 dollar per maand) lost dit op. |
+| Rode ⚠️ met "Deel 2 van 4: ..." | Eén deel van een lang gesprek faalde. Een nieuwe poging hervat bij dat deel; de eerdere delen staan al klaar. |
 | ⚠️-callout "OpenAI transcriptie mislukt (400)" | Meestal een onbekend audioformaat. Controleer `filename`/`Content-Type`; m4a werkt. |
 | Pagina heeft wel transcript maar geen samenvatting | Samenvatting mislukt na transcriptie; de audio is dan al gewist, de retry gebruikt het bewaarde transcript. Zie de ⚠️-callout. |
 | Transcript mist namen of bevat zinnen die je niet zei | Draai `OPENAI_API_KEY=sk-... npx tsx scripts/compare-transcribe.ts "/pad/opname.m4a"`: dat toont dezelfde opname met vier instellingen naast elkaar. Een hint (`TRANSCRIBE_PROMPT`) staat bewust uit, want gpt-4o-transcribe kan die als transcript teruggeven. Chunking staat standaard uit: in de eerste vergelijking verloor `chunking_strategy: auto` woorden en namen. Opnieuw aanzetten kan met `TRANSCRIBE_CHUNKING = "auto"` in `wrangler.toml`. |

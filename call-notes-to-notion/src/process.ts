@@ -9,6 +9,7 @@ import {
 } from "./notion";
 import { summarize as defaultSummarize, type Summarizer } from "./summarize";
 import { formatNl, minutesBetween, weekdayNl } from "./time";
+import { audioKey, joinTranscripts, partFilename } from "./audio";
 import { TranscribeError, transcribe as defaultTranscribe } from "./transcribe";
 import { JOB_TTL_SECONDS, MAX_ATTEMPTS, STALE_PROCESSING_MINUTES, type Env, type Job } from "./types";
 
@@ -99,33 +100,47 @@ export async function processJob(env: Env, job: Job, deps: ProcessDeps = {}): Pr
   try {
     const datumLabel = formatNl(new Date(job.meta.datum), env.TIMEZONE);
 
-    // Stap 1: transcriptie (overgeslagen als het transcript al bekend is).
+    // Stap 1: transcriptie, per deel (overgeslagen als het transcript al bekend is). Elk deel dat klaar
+    // is wordt bewaard, zodat een nieuwe poging bij het volgende deel verdergaat.
     if (!job.transcript) {
-      const audio = await env.JOBS.get(`audio:${job.id}`, "arrayBuffer");
-      if (!audio) throw new Error("Audio niet (meer) beschikbaar (al gewist of verlopen); upload de opname opnieuw.");
-      const request = {
-        apiKey: env.OPENAI_API_KEY,
-        language: env.TRANSCRIBE_LANGUAGE,
-        audio,
-        filename: job.filename,
-        contentType: job.contentType,
-        prompt: env.TRANSCRIBE_PROMPT?.trim() || undefined,
-        fetchImpl: deps.fetchImpl,
-      };
-      try {
-        job.transcript = await transcribe({
-          ...request,
-          model: env.TRANSCRIBE_MODEL,
-          chunking: env.TRANSCRIBE_CHUNKING === "auto" ? "auto" : "off",
-        });
-      } catch (err) {
-        const fallback = (env.TRANSCRIBE_FALLBACK_MODEL ?? "whisper-1").trim();
-        if (!canFallBack(err, fallback, env.TRANSCRIBE_MODEL)) throw err;
-        (deps.log ?? console.log)(`job ${job.id}: ${env.TRANSCRIBE_MODEL} faalde (${(err as Error).message}); opnieuw met ${fallback}`);
-        job.transcript = await transcribe({ ...request, model: fallback, chunking: "off" });
+      const total = job.parts ?? 1;
+      job.partials ??= [];
+      for (let i = job.partials.length; i < total; i++) {
+        const key = audioKey(job.id, i, total);
+        const label = total > 1 ? `deel ${i + 1} van ${total}` : "";
+        const audio = await env.JOBS.get(key, "arrayBuffer");
+        if (!audio) {
+          throw new Error(`Audio${label ? ` (${label})` : ""} niet (meer) beschikbaar (al gewist of verlopen); upload de opname opnieuw.`);
+        }
+        const request = {
+          apiKey: env.OPENAI_API_KEY,
+          language: env.TRANSCRIBE_LANGUAGE,
+          audio,
+          filename: partFilename(job.filename, i, total),
+          contentType: job.contentType,
+          prompt: env.TRANSCRIBE_PROMPT?.trim() || undefined,
+          fetchImpl: deps.fetchImpl,
+        };
+        try {
+          try {
+            job.partials.push(
+              await transcribe({ ...request, model: env.TRANSCRIBE_MODEL, chunking: env.TRANSCRIBE_CHUNKING === "auto" ? "auto" : "off" }),
+            );
+          } catch (err) {
+            const fallback = (env.TRANSCRIBE_FALLBACK_MODEL ?? "whisper-1").trim();
+            if (!canFallBack(err, fallback, env.TRANSCRIBE_MODEL)) throw err;
+            (deps.log ?? console.log)(`job ${job.id}${label ? ` ${label}` : ""}: ${env.TRANSCRIBE_MODEL} faalde (${(err as Error).message}); opnieuw met ${fallback}`);
+            job.partials.push(await transcribe({ ...request, model: fallback, chunking: "off" }));
+          }
+        } catch (err) {
+          throw label ? new Error(`${label[0].toUpperCase()}${label.slice(1)}: ${(err as Error).message}`) : err;
+        }
+        // Dit deel is getranscribeerd: de audio ervan hoeft nergens meer te bestaan.
+        await env.JOBS.delete(key);
+        await saveJob(env, job);
       }
-      // Transcript is binnen: audio hoeft nergens meer te bestaan.
-      await env.JOBS.delete(`audio:${job.id}`);
+      job.transcript = joinTranscripts(job.partials);
+      delete job.partials;
       await saveJob(env, job);
     }
 
