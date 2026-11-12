@@ -38,6 +38,19 @@ describe("planAudio", () => {
     expect(at).toBe(1500);
   });
 
+  it("hergebruikt één buffer voor alle delen (zuinig met geheugen); elk deel is geldig zolang het niet vervangen is", () => {
+    const { bytes } = buildSyntheticMp4({ samples: 1500, sampleSize: () => 100 });
+    const plan = planAudio(bytes, small);
+    if (plan.mode !== "split") throw new Error("verwachtte split");
+    const first = plan.part(0);
+    const firstCopy = first.slice();
+    expect(parseMp4Audio(first).sampleSizes.length).toBeGreaterThan(0);
+    const second = plan.part(1);
+    expect(second.buffer).toBe(first.buffer); // zelfde onderliggende buffer
+    expect(parseMp4Audio(second).sampleSizes.length).toBeGreaterThan(0);
+    expect(Array.from(firstCopy).length).toBeGreaterThan(0);
+  });
+
   it("splitst ook op duur, ook als het bestand klein genoeg is", () => {
     const { bytes } = buildSyntheticMp4({ samples: 1000, sampleSize: () => 20 }); // 20 kB, 46 s
     const plan = planAudio(bytes, { ...small, parseThresholdBytes: 0, maxPartSeconds: 20 });

@@ -87,5 +87,5 @@ en teken meerdere strepen over het token. Zoom in om te controleren dat er geen 
 | `Niet geautoriseerd` | Het token in het Shortcut is niet hetzelfde als `INGEST_TOKEN` in de Worker, of er staat geen spatie na `Bearer` |
 | Shortcut staat niet in het Share-menu | **Show in Share Sheet** staat uit; bovenaan moet "from Share Sheet" staan |
 | Fout van OpenAI over het bestand | Je hebt de notitie gedeeld in plaats van de opname zelf |
-| `413` | Opname groter dan 60 MB (m4a) of 24 MB (andere formaten); comprimeer of deel een kortere opname |
+| `413` | Opname groter dan 80 MB (m4a) of 24 MB (andere formaten); comprimeer of deel een kortere opname |
 | Pagina blijft op ⏳ | Wacht tot vier minuten of start `POST /process`; zie `docs/SETUP.md` |

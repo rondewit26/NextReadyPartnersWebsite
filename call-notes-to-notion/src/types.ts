@@ -83,8 +83,11 @@ export const JOB_TTL_SECONDS = 60 * 60 * 48;
 export const AUDIO_TTL_SECONDS = 60 * 60;
 /** Grootste bestand dat als geheel naar OpenAI mag (hun limiet is 25 MB, KV 25 MiB). */
 export const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
-/** Grootste upload. De Worker houdt het bestand in het geheugen (128 MB) en maakt er delen van. */
-export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
+/**
+ * Grootste upload. De Worker houdt het bestand in het geheugen (128 MB) en maakt er delen van, met
+ * één hergebruikte buffer. Cloudflare weigert zelf uploads boven 100 MB. Ruim een uur in 130 kbps stereo.
+ */
+export const MAX_UPLOAD_BYTES = 80 * 1024 * 1024;
 /** Onder deze grootte wordt een MP4 niet ingelezen om te splitsen. */
 export const PARSE_THRESHOLD_BYTES = 5 * 1024 * 1024;
 /** Sampledata per deel; met container-overhead blijft elk deel ruim onder 25 MB. */

@@ -30,7 +30,16 @@ export const DEFAULT_AUDIO_LIMITS: AudioLimits = {
 
 export type AudioPlan =
   | { mode: "single"; parts: 1; durationSeconds?: number }
-  | { mode: "split"; parts: number; durationSeconds: number; part: (index: number) => Uint8Array };
+  | {
+      mode: "split";
+      parts: number;
+      durationSeconds: number;
+      /**
+       * Bouwt deel `index`. Alle delen delen één interne buffer, om geheugen te sparen: het resultaat is
+       * alleen geldig tot de volgende aanroep. Sla het dus eerst op (await put) voordat je het volgende vraagt.
+       */
+      part: (index: number) => Uint8Array;
+    };
 
 /** KV-sleutel van een deel. Eén deel behoudt de oorspronkelijke sleutel, zodat oudere jobs blijven werken. */
 export function audioKey(id: string, index: number, total: number): string {
@@ -82,11 +91,16 @@ export function planAudio(bytes: Uint8Array, overrides: Partial<AudioLimits> = {
   }
 
   if (bounds.length === 2 && !tooBigForSingle) return { mode: "single", parts: 1, durationSeconds: track.durationSeconds };
+  let scratch = new Uint8Array(0);
+  const alloc = (length: number): Uint8Array => {
+    if (scratch.length < length) scratch = new Uint8Array(length);
+    return scratch.subarray(0, length);
+  };
   return {
     mode: "split",
     parts: bounds.length - 1,
     durationSeconds: track.durationSeconds,
-    part: (index) => extractPart(bytes, track, bounds[index], bounds[index + 1]),
+    part: (index) => extractPart(bytes, track, bounds[index], bounds[index + 1], alloc),
   };
 }
 

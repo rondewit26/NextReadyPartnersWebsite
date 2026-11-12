@@ -320,8 +320,17 @@ function withDuration(rawBox: Uint8Array, kind: "mvhd" | "mdhd" | "tkhd", durati
 const DEFAULT_SMHD = box("smhd", new Uint8Array(8));
 const DEFAULT_DINF = box("dinf", box("dref", u32s(0, 1), box("url ", u32s(1))));
 
-/** Bouwt één standalone MP4 met samples [s0, s1) van de bron. */
-export function extractPart(buf: Uint8Array, track: Mp4Track, s0: number, s1: number): Uint8Array {
+/**
+ * Bouwt één standalone MP4 met samples [s0, s1) van de bron. Met `alloc` kan de aanroeper een
+ * buffer hergebruiken (het resultaat is dan een view die tot de volgende aanroep geldig is).
+ */
+export function extractPart(
+  buf: Uint8Array,
+  track: Mp4Track,
+  s0: number,
+  s1: number,
+  alloc: (length: number) => Uint8Array = (length) => new Uint8Array(length),
+): Uint8Array {
   const count = s1 - s0;
   if (count <= 0) throw new Mp4Error("Leeg deel");
 
@@ -380,10 +389,10 @@ export function extractPart(buf: Uint8Array, track: Mp4Track, s0: number, s1: nu
   const mdatPayloadStart = track.ftyp.length + moovLength + 8;
   const moov = buildMoov(mdatPayloadStart);
 
-  const out = new Uint8Array(mdatPayloadStart + payloadBytes);
+  const out = alloc(mdatPayloadStart + payloadBytes);
   out.set(track.ftyp, 0);
   out.set(moov, track.ftyp.length);
-  const mdatHeader = new DataView(out.buffer, mdatPayloadStart - 8, 8);
+  const mdatHeader = new DataView(out.buffer, out.byteOffset + mdatPayloadStart - 8, 8);
   mdatHeader.setUint32(0, payloadBytes + 8);
   out.set([0x6d, 0x64, 0x61, 0x74], mdatPayloadStart - 4); // "mdat"
 

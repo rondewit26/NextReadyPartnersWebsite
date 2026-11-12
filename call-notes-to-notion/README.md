@@ -92,7 +92,7 @@ Marketing het interne profiel; anders kiest Claude zelf. Aanpassen: `src/summari
 
 - **iOS laat geen apps meeluisteren.** Opnemen gaat via Apple's eigen knop in de Telefoon-app (iOS 18.1+). Beide partijen horen een melding. Er is geen automatische trigger "gesprek beëindigd"; het delen vanuit Notities is de ene handmatige tik.
 - **Apple's gesprekstranscriptie werkt niet in het Nederlands**, daarom gaat de audio standaard naar OpenAI (zie de tabel hierboven voor wat er precies wordt bewaard). Alternatief zonder audio-upload: de on-device variant in `docs/SHORTCUT.md`.
-- **Max. 60 MB per upload.** Lange m4a-opnames worden automatisch gesplitst (zie "Lange gesprekken"). Andere formaten dan m4a/mp4 (mp3, wav) kunnen als geheel tot 24 MB, want OpenAI accepteert maximaal 25 MB per verzoek.
+- **Max. 80 MB per upload.** Lange m4a-opnames worden automatisch gesplitst (zie "Lange gesprekken"). Andere formaten dan m4a/mp4 (mp3, wav) kunnen als geheel tot 24 MB, want OpenAI accepteert maximaal 25 MB per verzoek.
 - **Notion's eigen "AI meeting notes"-blok** kan niet via de API worden aangemaakt. De pagina krijgt gewone blokken met dezelfde informatie. Je kunt in Notion wel nog Notion AI over het transcript laten lopen.
 - **Cloudflare gratis tier** geeft 10 ms CPU per aanroep. Netwerk-wachttijd telt niet mee, dus dit past normaal. Zie je in `wrangler tail` toch "CPU time limit exceeded", dan is Workers Paid (5 dollar per maand, 30 s CPU) de oplossing.
 
@@ -123,11 +123,12 @@ m4a/mp4-opname automatisch zodra hij te groot of te lang is:
 | Opname | Wat er gebeurt |
 |---|---|
 | m4a/mp4 tot ongeveer 18 MB en 20 minuten | Ongewijzigd, één transcriptie |
-| m4a/mp4 tot 60 MB | Gesplitst in delen |
+| m4a/mp4 tot 80 MB | Gesplitst in delen |
 | mp3, wav en andere formaten tot 24 MB | Ongewijzigd, één transcriptie |
-| Alles boven 60 MB, of niet-m4a boven 24 MB | Geweigerd met een duidelijke melding, vóór er een Notion-pagina ontstaat |
+| Alles boven 80 MB, of niet-m4a boven 24 MB | Geweigerd met een duidelijke melding, vóór er een Notion-pagina ontstaat |
 
-60 MB is ongeveer twee uur in de standaardkwaliteit van Voice Memos. Zie je eerst wat er met een opname zou gebeuren, zonder iets
+80 MB is ruim een uur in 130 kbps stereo (bijv. een Voice Memo van 65 minuten is ongeveer 64 MB), of ruim twee uur
+in een gewone mono-opname. Zie je eerst wat er met een opname zou gebeuren, zonder iets
 te uploaden, met: `npx tsx scripts/split-check.ts "/pad/naar/opname.m4a"`.
 
 **Heel grote bestanden (honderden MB).** Een m4a van meer dan 60 MB is vrijwel altijd lossless of met een hoge kwaliteit opgenomen,
@@ -142,12 +143,15 @@ Dat geeft ongeveer 18 MB per uur (gemeten: een bron van 562 MB per uur werd 18 M
 niet meer lossless opneemt: Instellingen, Apps, Voice Memos, Audio Quality op "Compressed".
 
 Aandachtspunten:
-- **Rekentijd.** Splitsen kost ongeveer 30 tot 60 ms rekentijd voor een bestand van 30 MB (gemeten in Node). Het gratis Cloudflare-plan staat
+- **Rekentijd.** Splitsen kost ongeveer 30 ms voor een bestand van 30 MB en ongeveer 80 ms voor een van 62 MB (gemeten in Node). Het gratis Cloudflare-plan staat
   maar 10 ms rekentijd per verzoek toe. Krijg je bij een grote upload de melding "Worker exceeded CPU time limit", dan is Workers Paid
   (5 dollar per maand, 30 seconden) de oplossing. Kleine opnames raken dit niet.
 - **Op de grens tussen twee delen** kan één woord worden afgekapt. Gesneden wordt op een tijdstip en niet op een pauze, omdat dat zonder te decoderen kan.
 - **Alleen gewone (niet-gefragmenteerde) m4a/mp4.** Een gefragmenteerd bestand boven 24 MB wordt geweigerd.
-- **Geheugen.** De Worker heeft 128 MB. Een upload van 60 MB past, maar boven die grens niet; daarom de limiet.
+- **Geheugen (niet in productie gemeten).** Een Worker heeft 128 MB. De upload wordt in één vooraf toegewezen buffer ingelezen en de delen worden
+  met één hergebruikte buffer gebouwd, zodat het in theorie ongeveer het bestand plus 20 MB kost. Dat heb ik lokaal wel gedraaid maar niet tegen de echte
+  limiet in productie getest. Krijg je bij een grote upload "Worker exceeded memory limit", zet het bestand dan eerst om naar een kleiner bestand
+  (ffmpeg, hierboven), bijvoorbeeld mono op 64 kbps: dat is ongeveer 29 MB per uur.
 
 ## Kwaliteit van de transcriptie
 

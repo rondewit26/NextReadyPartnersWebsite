@@ -11,6 +11,27 @@ export interface IngestDeps {
   newId?: () => string;
 }
 
+/**
+ * Leest de body in één vooraf toegewezen buffer, zodat het geheugen niet tijdelijk dubbel wordt gebruikt
+ * (`arrayBuffer()` bouwt het bestand uit stukken op). Zonder bruikbare Content-Length valt het terug op `arrayBuffer()`.
+ */
+export async function readBody(request: Request, declaredLength: number): Promise<Uint8Array> {
+  if (!request.body || !Number.isFinite(declaredLength) || declaredLength <= 0) {
+    return new Uint8Array(await request.arrayBuffer());
+  }
+  const out = new Uint8Array(declaredLength);
+  const reader = request.body.getReader();
+  let at = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (at + value.length > out.length) throw new Error("body is groter dan de Content-Length");
+    out.set(value, at);
+    at += value.length;
+  }
+  return at === out.length ? out : out.subarray(0, at);
+}
+
 export function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -184,7 +205,12 @@ export async function handleIngest(request: Request, env: Env, deps: IngestDeps 
   const declared = Number(request.headers.get("Content-Length") ?? "0");
   if (declared > MAX_UPLOAD_BYTES) return tooLarge(declared);
 
-  const audio = await request.arrayBuffer();
+  let audio: Uint8Array;
+  try {
+    audio = await readBody(request, declared);
+  } catch (err) {
+    return json({ ok: false, error: `Upload lezen mislukt: ${(err as Error).message}` }, 400);
+  }
   if (audio.byteLength === 0) return json({ ok: false, error: "Geen audio ontvangen (lege body)" }, 400);
   if (audio.byteLength > MAX_UPLOAD_BYTES) return tooLarge(audio.byteLength);
 
@@ -192,7 +218,7 @@ export async function handleIngest(request: Request, env: Env, deps: IngestDeps 
   // geen lege Notion-pagina achterlaat.
   let plan;
   try {
-    plan = planAudio(new Uint8Array(audio), deps.audioLimits);
+    plan = planAudio(audio, deps.audioLimits);
   } catch (err) {
     if (err instanceof AudioError) return json({ ok: false, error: err.message }, err.status);
     return json({ ok: false, error: `Opname verwerken mislukt: ${(err as Error).message}` }, 500);

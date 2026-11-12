@@ -101,9 +101,10 @@ curl -X POST "http://localhost:8787/__scheduled?cron=*/2+*+*+*+*"   # cron handm
 |---|---|
 | `401 Niet geautoriseerd` | Token in Shortcut ≠ `INGEST_TOKEN`. Header moet `Authorization: Bearer <token>` zijn. |
 | `502 Notion onbereikbaar: ... 404` | Integratie niet gekoppeld aan de pagina (stap 1.4) of verkeerd data source-id. |
-| `413` met "60 MB" | Opname groter dan 60 MB. Comprimeer of neem hem in twee delen op. |
+| `413` met "80 MB" | Opname groter dan 80 MB. Comprimeer of neem hem in twee delen op. |
 | Fout of HTML-pagina "Request Entity Too Large" bij een heel groot bestand | Boven 100 MB weigert Cloudflare de upload zelf. Zet het bestand eerst om met `ffmpeg -i "opname.m4a" -vn -ac 1 -b:a 40k "opname-klein.m4a"`; zie README, "Lange gesprekken". |
 | `413` met "alleen m4a/mp4" | Een groot bestand in een ander formaat dan m4a/mp4 (mp3, wav). Die kunnen niet worden gesplitst en mogen maximaal 24 MB zijn. |
+| Fout "Worker exceeded memory limit" bij een grote upload | Het bestand past niet in het geheugen van de Worker. Zet het eerst om met `ffmpeg -i "opname.m4a" -vn -ac 1 -b:a 64k "opname-klein.m4a"` (ongeveer 29 MB per uur). |
 | Fout "Worker exceeded CPU time limit" bij een grote upload | Het gratis plan staat maar 10 ms rekentijd toe. Splitsen van een groot bestand kost meer. Workers Paid (5 dollar per maand) lost dit op. |
 | Rode ⚠️ met "Deel 2 van 4: ..." | Eén deel van een lang gesprek faalde. Een nieuwe poging hervat bij dat deel; de eerdere delen staan al klaar. |
 | ⚠️-callout "OpenAI transcriptie mislukt (400)" | Meestal een onbekend audioformaat. Controleer `filename`/`Content-Type`; m4a werkt. |

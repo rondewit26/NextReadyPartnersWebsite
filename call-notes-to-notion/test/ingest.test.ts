@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extensionFor, handleIngest, handleIngestText } from "../src/ingest";
+import { extensionFor, handleIngest, handleIngestText, readBody } from "../src/ingest";
 import type { Job } from "../src/types";
 import { parseMp4Audio } from "../src/mp4";
 import { MemoryKV, ingestRequest, makeEnv, mockFetch } from "./helpers";
@@ -24,20 +24,20 @@ describe("handleIngest", () => {
     expect(res.status).toBe(400);
   });
 
-  it("weigert uploads boven 60 MB op basis van Content-Length, zonder de body te lezen", async () => {
+  it("weigert uploads boven 80 MB op basis van Content-Length, zonder de body te lezen", async () => {
     const { fetchImpl, calls } = mockFetch();
     const res = await handleIngest(
-      ingestRequest({ token: "geheim-token", contentLength: 70 * 1024 * 1024 }),
+      ingestRequest({ token: "geheim-token", contentLength: 90 * 1024 * 1024 }),
       makeEnv(new MemoryKV()),
       { fetchImpl },
     );
     expect(res.status).toBe(413);
     const body = (await res.json()) as any;
-    expect(body.error).toContain("60 MB");
+    expect(body.error).toContain("80 MB");
     expect(calls).toHaveLength(0);
   });
 
-  it("neemt een opname van meer dan 30 MB aan (voorheen te groot) zolang hij onder 60 MB blijft", async () => {
+  it("neemt een opname van meer dan 30 MB aan (voorheen te groot) zolang hij onder 80 MB blijft", async () => {
     const res = await handleIngest(
       ingestRequest({ token: "geheim-token", contentLength: 31 * 1024 * 1024, audio: new Uint8Array(4096).buffer as ArrayBuffer }),
       makeEnv(new MemoryKV()),
@@ -213,5 +213,36 @@ describe("handleIngestText", () => {
     expect((await handleIngestText(req({ contact: "x" }), env, deps)).status).toBe(400);
     expect((await handleIngestText(req("geen json"), env, deps)).status).toBe(400);
     expect((await handleIngestText(req({ transcript: "x" }, "fout"), env, deps)).status).toBe(401);
+  });
+});
+
+describe("readBody", () => {
+  const streamOf = (chunks: Uint8Array[]) =>
+    new ReadableStream<Uint8Array>({
+      start(c) {
+        chunks.forEach((x) => c.enqueue(x));
+        c.close();
+      },
+    });
+  const req = (body: BodyInit | null) => new Request("https://x.test/", { method: "POST", body, ...(body instanceof ReadableStream ? { duplex: "half" } : {}) } as RequestInit);
+
+  it("leest een body in stukken in één buffer van de aangekondigde grootte", async () => {
+    const chunks = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5]), new Uint8Array([6])];
+    const out = await readBody(req(streamOf(chunks)), 6);
+    expect(Array.from(out)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it("geeft alleen de echt ontvangen bytes terug als de body korter is dan aangekondigd", async () => {
+    const out = await readBody(req(streamOf([new Uint8Array([9, 9, 9])])), 10);
+    expect(Array.from(out)).toEqual([9, 9, 9]);
+  });
+
+  it("weigert een body die groter is dan de Content-Length", async () => {
+    await expect(readBody(req(streamOf([new Uint8Array(8)])), 5)).rejects.toThrow("groter dan de Content-Length");
+  });
+
+  it("valt zonder bruikbare Content-Length terug op arrayBuffer()", async () => {
+    expect(Array.from(await readBody(req(streamOf([new Uint8Array([7, 8])])), 0))).toEqual([7, 8]);
+    expect(Array.from(await readBody(req(new Uint8Array([1, 2, 3])), NaN))).toEqual([1, 2, 3]);
   });
 });
