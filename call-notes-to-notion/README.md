@@ -130,6 +130,17 @@ m4a/mp4-opname automatisch zodra hij te groot of te lang is:
 60 MB is ongeveer twee uur in de standaardkwaliteit van Voice Memos. Zie je eerst wat er met een opname zou gebeuren, zonder iets
 te uploaden, met: `npx tsx scripts/split-check.ts "/pad/naar/opname.m4a"`.
 
+**Heel grote bestanden (honderden MB).** Een m4a van meer dan 60 MB is vrijwel altijd lossless of met een hoge kwaliteit opgenomen,
+en spraak heeft dat niet nodig. Een uur lossless is ongeveer 300 tot 600 MB. Cloudflare weigert uploads boven 100 MB al voordat de
+Worker ze ziet, dus daar kan geen code iets aan doen. Zet zo'n bestand eerst om naar een klein m4a-bestand:
+
+```bash
+ffmpeg -i "opname.m4a" -vn -ac 1 -b:a 40k "opname-klein.m4a"
+```
+
+Dat geeft ongeveer 18 MB per uur (gemeten: een bron van 562 MB per uur werd 18 MB per uur). Stel Voice Memos zo in dat het
+niet meer lossless opneemt: Instellingen, Apps, Voice Memos, Audio Quality op "Compressed".
+
 Aandachtspunten:
 - **Rekentijd.** Splitsen kost ongeveer 30 tot 60 ms rekentijd voor een bestand van 30 MB (gemeten in Node). Het gratis Cloudflare-plan staat
   maar 10 ms rekentijd per verzoek toe. Krijg je bij een grote upload de melding "Worker exceeded CPU time limit", dan is Workers Paid

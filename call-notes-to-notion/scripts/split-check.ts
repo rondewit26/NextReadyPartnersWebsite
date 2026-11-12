@@ -5,7 +5,7 @@
  *
  * Met een uitvoermap worden de delen daar als m4a-bestanden neergezet, zodat je ze kunt afspelen.
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { AudioError, DEFAULT_AUDIO_LIMITS, partFilename, planAudio, type AudioPlan } from "../src/audio";
 import { parseMp4Audio } from "../src/mp4";
 import { MAX_UPLOAD_BYTES } from "../src/types";
@@ -19,12 +19,17 @@ if (!path) {
 const mb = (n: number) => `${(n / 1048576).toFixed(1)} MB`;
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
-const bytes = new Uint8Array(readFileSync(path));
-console.log(`Bestand: ${path.split("/").pop()}, ${mb(bytes.length)}`);
-if (bytes.length > MAX_UPLOAD_BYTES) {
-  console.log(`Te groot: de Worker accepteert maximaal ${mb(MAX_UPLOAD_BYTES)}. Comprimeer de opname of neem hem in delen op.`);
+const size = statSync(path).size;
+console.log(`Bestand: ${path.split("/").pop()}, ${mb(size)}`);
+if (size > MAX_UPLOAD_BYTES) {
+  console.log(`Te groot: de Worker accepteert maximaal ${mb(MAX_UPLOAD_BYTES)}, en Cloudflare weigert uploads boven 100 MB al voordat de Worker ze ziet.`);
+  console.log("Dit is vrijwel zeker een lossless of hoogwaardige opname. Spraak heeft die kwaliteit niet nodig. Zet hem eerst om (ongeveer 18 MB per uur):");
+  console.log(`  ffmpeg -i "${path}" -vn -ac 1 -b:a 40k "${path.replace(/\.[^./]+$/, "")}-klein.m4a"`);
+  console.log("Heb je ffmpeg nog niet, installeer het dan eerst met: brew install ffmpeg");
   process.exit(1);
 }
+
+const bytes = new Uint8Array(readFileSync(path));
 
 const t0 = performance.now();
 let plan: AudioPlan;
