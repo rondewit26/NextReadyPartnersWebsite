@@ -106,6 +106,7 @@ curl -X POST "http://localhost:8787/__scheduled?cron=*/2+*+*+*+*"   # cron handm
 | `413` met "alleen m4a/mp4" | Een groot bestand in een ander formaat dan m4a/mp4 (mp3, wav). Die kunnen niet worden gesplitst en mogen maximaal 24 MB zijn. |
 | Fout "Worker exceeded memory limit" bij een grote upload | Het bestand past niet in het geheugen van de Worker. Zet het eerst om met `ffmpeg -i "opname.m4a" -vn -ac 1 -b:a 64k "opname-klein.m4a"` (ongeveer 29 MB per uur). |
 | Fout "Worker exceeded CPU time limit" bij een grote upload | Het gratis plan staat maar 10 ms rekentijd toe. Splitsen van een groot bestand kost meer. Workers Paid (5 dollar per maand) lost dit op. |
+| Oranje "Let op: Deel 3 van 14 (...) bevat maar N woorden voor M minuten" bovenaan de pagina | Het transcript van dat deel is waarschijnlijk afgekapt, of het stuk is stil. Controleer de audio op die tijdstippen. Draai `OPENAI_API_KEY=sk-... npx tsx scripts/compare-transcribe.ts "deel.m4a"` op dat deel (zie `scripts/split-check.ts` om delen te bewaren) om modellen te vergelijken. |
 | Rode ⚠️ met "Deel 2 van 4: ..." | Eén deel van een lang gesprek faalde. Een nieuwe poging hervat bij dat deel; de eerdere delen staan al klaar. |
 | ⚠️-callout "OpenAI transcriptie mislukt (400)" | Meestal een onbekend audioformaat. Controleer `filename`/`Content-Type`; m4a werkt. |
 | Pagina heeft wel transcript maar geen samenvatting | Samenvatting mislukt na transcriptie; de audio is dan al gewist, de retry gebruikt het bewaarde transcript. Zie de ⚠️-callout. |

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { handleIngest, handleIngestText } from "../src/ingest";
-import { canFallBack, processPendingJobs, shouldProcess } from "../src/process";
+import { canFallBack, completenessWarning, processPendingJobs, shouldProcess } from "../src/process";
 import { TranscribeError } from "../src/transcribe";
 import type { CallSummary, Job } from "../src/types";
 import { MemoryKV, ingestRequest, makeEnv, mockFetch } from "./helpers";
@@ -345,5 +345,54 @@ describe("lange opnames in meerdere delen", () => {
     const result = await processPendingJobs(makeEnv(kv), { fetchImpl, now, log: () => {}, summarize: async () => summary, transcribe });
     expect(result.processed).toEqual(["lang"]);
     expect(models).toEqual(["gpt-4o-transcribe", "gpt-4o-transcribe", "gpt-4o-transcribe", "whisper-1", "gpt-4o-transcribe"]);
+  });
+});
+
+describe("volledigheidscontrole", () => {
+  const words = (n: number) => Array.from({ length: n }, (_, i) => `woord${i}`).join(" ");
+
+  it("waarschuwt bij te weinig woorden voor de duur van een deel, met tijdstippen", () => {
+    const w = completenessWarning(3, 4, words(640), [986, 986, 986, 986])!;
+    expect(w).toContain("Deel 4 van 4 (49:18 tot 1:05:44)");
+    expect(w).toContain("640 woorden");
+    expect(w).toContain("39 per minuut");
+  });
+
+  it("zwijgt bij normaal spraakverloop, bij korte delen en zonder duur", () => {
+    expect(completenessWarning(0, 4, words(1800), [986])).toBeNull(); // ~110 per minuut
+    expect(completenessWarning(0, 1, words(5), [90])).toBeNull(); // korter dan 2 minuten
+    expect(completenessWarning(0, 1, words(5), undefined)).toBeNull();
+  });
+
+  it("formuleert het voor een ongedeelde opname", () => {
+    expect(completenessWarning(0, 1, words(100), [600])).toContain("De opname (10:00)");
+  });
+});
+
+describe("waarschuwing op de Notion-pagina", () => {
+  const limits = { maxSingleBytes: 150_000, parseThresholdBytes: 10_000, maxPartBytes: 40_000, maxPartSeconds: 1e9 };
+  const bytes = buildSyntheticMp4({ samples: 1500, sampleSize: () => 100 }).bytes; // 4 delen van ~11,6 s... te kort
+
+  it("zet een oranje melding bovenaan de samenvatting als een deel te weinig woorden heeft", async () => {
+    const kv = new MemoryKV();
+    const { fetchImpl, calls } = mockFetch();
+    await handleIngest(ingestRequest({ token: "geheim-token", audio: bytes.buffer as ArrayBuffer }), makeEnv(kv), {
+      fetchImpl, now, newId: () => "w", audioLimits: limits,
+    });
+    // Maak de delen lang genoeg voor de controle (>= 2 minuten) door de duur in de job te overschrijven.
+    const job = JSON.parse(await kv.get("job:w")) as Job;
+    job.partSeconds = [600, 600, 600, 600];
+    await kv.put("job:w", JSON.stringify(job));
+    const transcribe = async (a: any) => (a.filename.endsWith("deel3.m4a") ? "Maar vijf woorden hier." : Array.from({ length: 1000 }, (_, i) => `w${i}`).join(" "));
+    await processPendingJobs(makeEnv(kv), { fetchImpl, now, log: () => {}, summarize: async () => summary, transcribe });
+
+    const summaryCall = calls.filter((c) => c.method === "PATCH" && /\/children$/.test(c.url)).find((c) => c.body.after);
+    const first = (summaryCall!.body.children as any[])[0];
+    expect(first.type).toBe("callout");
+    const text = first.callout.rich_text[0].text.content as string;
+    expect(text).toContain("Deel 3 van 4");
+    expect(text).not.toContain("Deel 1 van 4");
+    const done = JSON.parse(await kv.get("job:w")) as Job;
+    expect(done.status).toBe("done");
   });
 });

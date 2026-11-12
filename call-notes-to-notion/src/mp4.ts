@@ -228,6 +228,13 @@ export function parseMp4Audio(buf: Uint8Array): Mp4Track {
   throw new Mp4Error("Geen audiotrack gevonden in dit bestand");
 }
 
+/** Duur in seconden van de samples [s0, s1). */
+export function rangeSeconds(track: Mp4Track, s0: number, s1: number): number {
+  let units = 0;
+  for (let i = s0; i < s1; i++) units += track.sampleDurations[i];
+  return units / track.mediaTimescale;
+}
+
 // ---------- Plannen ----------
 
 /**

@@ -49,6 +49,10 @@ export interface Job {
   audioBytes: number;
   /** Aantal delen waarin de opname is opgeslagen (1 = ongesplitst). */
   parts?: number;
+  /** Duur van elk deel in seconden, voor de volledigheidscontrole van het transcript. */
+  partSeconds?: number[];
+  /** Waarschuwingen over de kwaliteit van het transcript; komen als melding op de Notion-pagina. */
+  warnings?: string[];
   /** Transcripten van de delen die al klaar zijn; een nieuwe poging hervat daarna. */
   partials?: string[];
   /** Transcript zodra bekend. Audio wordt op dat moment direct gewist. */
@@ -89,11 +93,19 @@ export const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
  */
 export const MAX_UPLOAD_BYTES = 80 * 1024 * 1024;
 /** Onder deze grootte wordt een MP4 niet ingelezen om te splitsen. */
-export const PARSE_THRESHOLD_BYTES = 5 * 1024 * 1024;
+export const PARSE_THRESHOLD_BYTES = 256 * 1024;
 /** Sampledata per deel; met container-overhead blijft elk deel ruim onder 25 MB. */
 export const PART_MAX_BYTES = 18 * 1024 * 1024;
-/** Duur per deel. Voorzorg: gpt-4o-transcribe heeft volgens meldingen een duurlimiet van rond de 23 minuten. */
+/** Duur per deel voor modellen zonder korte uitvoerlimiet (whisper-1). */
 export const PART_MAX_SECONDS = 20 * 60;
+/**
+ * Duur per deel voor gpt-4o-transcribe en gpt-4o-mini-transcribe. Die modellen hebben een uitvoerlimiet van
+ * 2.000 tokens (ongeveer 9 minuten Nederlandse spraak) en kappen een langer deel stilzwijgend af.
+ * 5 minuten laat ruim marge, ook bij snel praten.
+ */
+export const GPT4O_PART_SECONDS = 5 * 60;
+/** Onder dit aantal woorden per minuut (bij een deel van minstens 2 minuten) waarschuwt de Worker. */
+export const MIN_WORDS_PER_MINUTE = 50;
 export const MAX_ATTEMPTS = 3;
 /** Na zoveel minuten "processing" zonder resultaat wordt een job opnieuw opgepakt. */
 export const STALE_PROCESSING_MINUTES = 30;

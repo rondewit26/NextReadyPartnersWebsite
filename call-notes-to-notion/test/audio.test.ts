@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AudioError, audioKey, joinTranscripts, partFilename, planAudio } from "../src/audio";
+import { AudioError, audioKey, joinTranscripts, partFilename, partSecondsFor, planAudio } from "../src/audio";
 import { parseMp4Audio } from "../src/mp4";
 import { buildSyntheticMp4 } from "./mp4-helpers";
 
@@ -8,7 +8,7 @@ const small = { maxSingleBytes: 150_000, parseThresholdBytes: 10_000, maxPartByt
 
 describe("planAudio", () => {
   it("laat kleine bestanden en niet-MP4-bestanden onder de limiet ongemoeid", () => {
-    expect(planAudio(new Uint8Array(5000).fill(1), small)).toEqual({ mode: "single", parts: 1 });
+    expect(planAudio(new Uint8Array(5000).fill(1), small)).toEqual({ mode: "single", parts: 1, partSeconds: [] });
     const tiny = buildSyntheticMp4({ samples: 50, sampleSize: () => 100 }).bytes; // < parse-drempel
     expect(planAudio(tiny, small).mode).toBe("single");
   });
@@ -74,6 +74,24 @@ describe("planAudio", () => {
   it("verwerkt een onleesbare MP4 die wel in zijn geheel past ongewijzigd, zoals voorheen", () => {
     const bad = buildSyntheticMp4({ samples: 300, sampleSize: () => 100, fragmented: true }).bytes;
     expect(planAudio(bad, small).mode).toBe("single");
+  });
+});
+
+describe("deelduur per model", () => {
+  it("gpt-4o-modellen krijgen delen van 5 minuten (uitvoerlimiet van 2.000 tokens), whisper-1 van 20", () => {
+    expect(partSecondsFor("gpt-4o-transcribe")).toBe(300);
+    expect(partSecondsFor("gpt-4o-mini-transcribe")).toBe(300);
+    expect(partSecondsFor(" GPT-4o-Transcribe ")).toBe(300);
+    expect(partSecondsFor("whisper-1")).toBe(1200);
+  });
+
+  it("planAudio meldt de duur per deel, en die tellen op tot de totale duur", () => {
+    const { bytes } = buildSyntheticMp4({ samples: 1000, sampleSize: () => 20 }); // 46 s
+    const plan = planAudio(bytes, { ...small, parseThresholdBytes: 0, maxPartSeconds: 20 });
+    expect(plan.mode).toBe("split");
+    expect(plan.partSeconds).toHaveLength(plan.parts);
+    expect(plan.partSeconds.reduce((a, b) => a + b, 0)).toBeCloseTo((1000 * 1024) / 22050, 3);
+    expect(plan.partSeconds.every((x) => x <= 20.5)).toBe(true);
   });
 });
 

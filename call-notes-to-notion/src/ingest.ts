@@ -1,6 +1,6 @@
 import { NotionClient, block, initialProperties, type FetchLike } from "./notion";
 import { formatNl, toZonedIso } from "./time";
-import { AudioError, audioKey, planAudio, type AudioLimits } from "./audio";
+import { AudioError, audioKey, partSecondsFor, planAudio, type AudioLimits } from "./audio";
 import { AUDIO_TTL_SECONDS, JOB_TTL_SECONDS, MAX_UPLOAD_BYTES, type Env, type IngestMeta, type Job } from "./types";
 
 export interface IngestDeps {
@@ -218,7 +218,7 @@ export async function handleIngest(request: Request, env: Env, deps: IngestDeps 
   // geen lege Notion-pagina achterlaat.
   let plan;
   try {
-    plan = planAudio(audio, deps.audioLimits);
+    plan = planAudio(audio, { maxPartSeconds: partSecondsFor(env.TRANSCRIBE_MODEL), ...deps.audioLimits });
   } catch (err) {
     if (err instanceof AudioError) return json({ ok: false, error: err.message }, err.status);
     return json({ ok: false, error: `Opname verwerken mislukt: ${(err as Error).message}` }, 500);
@@ -267,6 +267,7 @@ export async function handleIngest(request: Request, env: Env, deps: IngestDeps 
     filename: `gesprek-${id.slice(0, 8)}.${ext}`,
     audioBytes: audio.byteLength,
     parts: plan.parts,
+    partSeconds: plan.partSeconds,
     meta,
   };
   await env.JOBS.put(`job:${id}`, JSON.stringify(job), { expirationTtl: JOB_TTL_SECONDS });

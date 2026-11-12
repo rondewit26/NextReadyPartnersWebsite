@@ -7,6 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import { basename, extname } from "node:path";
+import { parseMp4Audio } from "../src/mp4";
 import { transcribe } from "../src/transcribe";
 
 const apiKey = process.env.OPENAI_API_KEY;
@@ -20,6 +21,12 @@ const mime: Record<string, string> = { ".m4a": "audio/mp4", ".mp4": "audio/mp4",
 const buf = readFileSync(path);
 const audio = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
 const contentType = mime[extname(path).toLowerCase()] ?? "application/octet-stream";
+let minutes = 0;
+try {
+  minutes = parseMp4Audio(new Uint8Array(buf)).durationSeconds / 60;
+} catch {
+  // geen m4a: geen duur, dan ook geen woorden per minuut
+}
 const OLD_PROMPT = "Nederlands telefoongesprek van Ron de Wit met Testpersoon.";
 
 const variants = [
@@ -39,7 +46,7 @@ for (const v of variants) {
     const words = text.split(/\s+/).filter(Boolean).length;
     const leak = text.includes("Nederlands telefoongesprek van");
     console.log(`=== ${v.label}`);
-    console.log(`    ${words} woorden, ${((Date.now() - t0) / 1000).toFixed(1)} s${leak ? ", LET OP: bevat de prompt-tekst" : ""}`);
+    console.log(`    ${words} woorden${minutes ? ` voor ${minutes.toFixed(1)} minuten audio (${Math.round(words / minutes)} per minuut; gewone spraak 100 tot 160)` : ""}, ${((Date.now() - t0) / 1000).toFixed(1)} s${leak ? ", LET OP: bevat de prompt-tekst" : ""}`);
     console.log(`${text}\n`);
   } catch (err) {
     console.log(`=== ${v.label}\n    FOUT: ${(err as Error).message}\n`);

@@ -114,8 +114,8 @@ duurlimiet van rond de 23 minuten. Een uur Voice Memos is ongeveer 30 MB. Daarom
 m4a/mp4-opname automatisch zodra hij te groot of te lang is:
 
 1. Het bestand wordt **niet gedecodeerd of opnieuw gecodeerd**. De gecomprimeerde audiosamples worden
-   ongewijzigd in nieuwe, zelfstandige m4a-bestanden gezet, elk hooguit 18 MB en 20 minuten. De audio blijft
-   bit voor bit gelijk, dus er gaat geen kwaliteit verloren.
+   ongewijzigd in nieuwe, zelfstandige m4a-bestanden gezet, elk hooguit 18 MB en **5 minuten bij gpt-4o-transcribe**
+   (20 minuten bij whisper-1; zie hieronder waarom). De audio blijft bit voor bit gelijk, dus er gaat geen kwaliteit verloren.
 2. Elk deel wordt apart getranscribeerd en daarna direct gewist. De transcripten worden in volgorde aan elkaar gezet.
 3. Een deel dat klaar is, wordt bewaard. Faalt een volgend deel, dan hervat een nieuwe poging daar en begint niet opnieuw.
 4. Het vangnet met `whisper-1` geldt per deel.
@@ -153,6 +153,26 @@ Aandachtspunten:
   met één hergebruikte buffer gebouwd, zodat het in theorie ongeveer het bestand plus 20 MB kost. Dat heb ik lokaal wel gedraaid maar niet tegen de echte
   limiet in productie getest. Krijg je bij een grote upload "Worker exceeded memory limit", zet het bestand dan eerst om naar een kleiner bestand
   (ffmpeg, hierboven), bijvoorbeeld mono op 64 kbps: dat is ongeveer 29 MB per uur.
+
+## Bekende beperking: gpt-4o-transcribe kapt lange stukken af
+
+gpt-4o-transcribe en gpt-4o-mini-transcribe hebben een maximale uitvoer van **2.000 tokens**
+([OpenAI, modelpagina](https://developers.openai.com/api/docs/models/gpt-4o-transcribe)). Dat is ongeveer 9 minuten
+Nederlandse spraak. Is een stuk audio langer, dan geeft het model **zonder foutmelding** alleen het begin terug.
+Gebruikers melden dit ook in de praktijk
+([OpenAI-forum](https://community.openai.com/t/gpt-4o-transcribe-truncates-output-after-8-9-minutes-even-on-short-segments/1354656),
+[nog een melding](https://community.openai.com/t/gpt-4o-transcribe-truncates-the-transcript/1148347)), en zeggen dat whisper-1 dezelfde stukken wel volledig teruggeeft.
+
+Gevolg: bij delen van 16 minuten ging per deel het laatste stuk verloren. Daarom geldt nu:
+- Delen zijn **5 minuten** zolang het model `gpt-4o-*` is (marge voor snel praten). Bij `whisper-1` blijft het 20 minuten.
+- De Worker **controleert elk deel op volledigheid**. Bevat een deel van minstens 2 minuten minder dan 50 woorden per minuut,
+  dan staat bovenaan de Notion-pagina een oranje melding met het deel en de tijdstippen. Gewone spraak is 100 tot 160 woorden per minuut.
+  Het kan ook gewoon stilte zijn, maar dan weet je waar je moet kijken.
+- Op een andere plek dan het model kan de staart nog steeds verdwijnen als een bestand niet gesplitst kan worden (mp3, wav). Daar waarschuwt dezelfde controle.
+
+Let ook op de levensduur: één bron meldt dat OpenAI whisper-1 en de gpt-4o-transcribe-modellen op 26 februari 2027 uitzet
+([The Neural Base / Developers Digest](https://www.developersdigest.tech/blog/whisper-1-gpt-4o-transcribe-deprecation)).
+Dat heb ik niet bij OpenAI zelf kunnen controleren. Controleer het voordat je lang op deze modellen blijft vertrouwen.
 
 ## Kwaliteit van de transcriptie
 

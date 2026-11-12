@@ -175,6 +175,39 @@ describe("handleIngest met lange opnames", () => {
   });
 });
 
+describe("deelduur bij gpt-4o-transcribe", () => {
+  // 12 minuten audio van ongeveer 600 kB: boven de parse-drempel van 256 kB, ver onder elke bytelimiet.
+  const twelveMinutes = () => buildSyntheticMp4({ samples: 15_504, sampleSize: () => 40 }).bytes;
+
+  it("snijdt een opname van 12 minuten in delen van hooguit 5 minuten, met de duur per deel in de job", async () => {
+    const kv = new MemoryKV();
+    const res = await handleIngest(
+      ingestRequest({ token: "geheim-token", audio: twelveMinutes().buffer as ArrayBuffer }),
+      makeEnv(kv),
+      { fetchImpl: mockFetch().fetchImpl, now, newId: () => "twaalf" },
+    );
+    expect(res.status).toBe(202);
+    const job = JSON.parse(await kv.get("job:twaalf")) as Job;
+    expect(job.parts).toBe(3);
+    expect(job.partSeconds).toHaveLength(3);
+    expect(job.partSeconds!.every((s) => s <= 300.5)).toBe(true);
+    expect(job.partSeconds!.reduce((a, b) => a + b, 0)).toBeCloseTo((15_504 * 1024) / 22050, 2);
+  });
+
+  it("laat dezelfde opname heel bij whisper-1 (delen van 20 minuten)", async () => {
+    const kv = new MemoryKV();
+    const res = await handleIngest(
+      ingestRequest({ token: "geheim-token", audio: twelveMinutes().buffer as ArrayBuffer }),
+      { ...makeEnv(kv), TRANSCRIBE_MODEL: "whisper-1" },
+      { fetchImpl: mockFetch().fetchImpl, now, newId: () => "heel" },
+    );
+    expect(res.status).toBe(202);
+    const job = JSON.parse(await kv.get("job:heel")) as Job;
+    expect(job.parts).toBe(1);
+    expect(job.partSeconds).toHaveLength(1);
+  });
+});
+
 describe("extensionFor", () => {
   it("haalt de extensie uit de bestandsnaam of het content-type", () => {
     expect(extensionFor("audio/x-m4a", "Opname 3.M4A")).toBe("m4a");

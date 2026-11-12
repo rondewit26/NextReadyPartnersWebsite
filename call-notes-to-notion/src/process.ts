@@ -11,7 +11,7 @@ import { summarize as defaultSummarize, type Summarizer } from "./summarize";
 import { formatNl, minutesBetween, weekdayNl } from "./time";
 import { audioKey, joinTranscripts, partFilename } from "./audio";
 import { TranscribeError, transcribe as defaultTranscribe } from "./transcribe";
-import { JOB_TTL_SECONDS, MAX_ATTEMPTS, STALE_PROCESSING_MINUTES, type Env, type Job } from "./types";
+import { JOB_TTL_SECONDS, MAX_ATTEMPTS, MIN_WORDS_PER_MINUTE, STALE_PROCESSING_MINUTES, type Env, type Job } from "./types";
 
 export interface ProcessDeps {
   fetchImpl?: FetchLike;
@@ -50,6 +50,29 @@ export function canFallBack(err: unknown, fallbackModel: string, primaryModel: s
   if (!fallbackModel || fallbackModel === primaryModel) return false;
   if (!(err instanceof TranscribeError)) return false;
   return err.status === 400 || err.status === 413 || err.status >= 500;
+}
+
+const clock = (seconds: number): string => {
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+};
+
+/**
+ * Waarschuwt als een deel verdacht weinig woorden bevat voor zijn duur. Modellen als gpt-4o-transcribe kunnen
+ * een transcript stilzwijgend afkappen; dit vangt dat op. Het kan ook gewoon een stil stuk zijn.
+ */
+export function completenessWarning(index: number, total: number, text: string, partSeconds?: number[]): string | null {
+  const seconds = partSeconds?.[index];
+  if (!seconds || seconds < 120) return null;
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  const perMinute = words / (seconds / 60);
+  if (perMinute >= MIN_WORDS_PER_MINUTE) return null;
+  const start = (partSeconds ?? []).slice(0, index).reduce((a, b) => a + b, 0);
+  const where = total > 1 ? `Deel ${index + 1} van ${total} (${clock(start)} tot ${clock(start + seconds)})` : `De opname (${clock(seconds)})`;
+  return `Let op: ${where} bevat maar ${words} woorden voor ${(seconds / 60).toFixed(1)} minuten, ${Math.round(perMinute)} per minuut. Gewone spraak is ongeveer 100 tot 160 per minuut. Het transcript is hier mogelijk onvolledig, of dit stuk bevat vooral stilte.`;
 }
 
 async function saveJob(env: Env, job: Job): Promise<void> {
@@ -135,6 +158,8 @@ export async function processJob(env: Env, job: Job, deps: ProcessDeps = {}): Pr
         } catch (err) {
           throw label ? new Error(`${label[0].toUpperCase()}${label.slice(1)}: ${(err as Error).message}`) : err;
         }
+        const warning = completenessWarning(i, total, job.partials[i], job.partSeconds);
+        if (warning) (job.warnings ??= []).push(warning);
         // Dit deel is getranscribeerd: de audio ervan hoeft nergens meer te bestaan.
         await env.JOBS.delete(key);
         await saveJob(env, job);
@@ -167,7 +192,8 @@ export async function processJob(env: Env, job: Job, deps: ProcessDeps = {}): Pr
     const props = finalProperties(job.meta, summary, options);
     if (Object.keys(props).length) await notion.updateProperties(job.pageId, props);
     // Samenvatting komt direct na de placeholder, dus vóór het transcript.
-    await notion.appendChildren(job.pageId, summaryBlocks(summary, job.meta, datumLabel), job.placeholderBlockId);
+    const notice = job.warnings?.length ? [block.callout(job.warnings.join("\n"), "⚠️", "orange")] : [];
+    await notion.appendChildren(job.pageId, [...notice, ...summaryBlocks(summary, job.meta, datumLabel)], job.placeholderBlockId);
 
     try {
       await notion.deleteBlock(job.placeholderBlockId);
